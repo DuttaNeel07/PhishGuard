@@ -7,7 +7,7 @@ def _take_screenshot(url: str) -> dict:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
-        page.goto(url, timeout=15000)
+        page.goto(url, timeout=60000, wait_until="domcontentloaded")
         screenshot = page.screenshot()
         browser.close()
         return {
