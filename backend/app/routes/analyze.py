@@ -7,18 +7,13 @@ from app.services.domain_service import analyze_domain
 from app.services.nlp_service import analyze_nlp
 from app.services.sandbox_service import analyze_visual
 from app.services.llm_service import generate_verdict, generate_scam_arc, generate_annotations
-<<<<<<< HEAD
 from app.services.redirect_service import analyze_chain
-from app.database import get_cached_result, set_cached_result
-from playwright.async_api import async_playwright
-=======
 from app.database import get_cached_result, set_cached_result, add_to_threat_feed, get_threat_feed
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from concurrent.futures import ThreadPoolExecutor
->>>>>>> d7a9770 (threat intelligence dashboard)
 import base64
 
 router = APIRouter()
