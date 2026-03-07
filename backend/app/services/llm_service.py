@@ -12,18 +12,32 @@ You analyze phishing attempts targeting Indian users — banking fraud, UPI scam
 OUTPUT FORMAT (strict JSON only — no markdown, no code fences, no extra text):
 {"score": <integer 0-100>, "tactics": ["urgency_pressure", "authority_spoofing", "visual_clone", "credential_harvest", "prize_scam", "fear_legal", "brand_impersonation", "otp_theft"], "verdict_en": "<2-3 sentences plain English>", "verdict_hi": "<same in Hindi>"}
 
-RULES:
+MANDATORY SCORING RULES (these override everything else):
+- If typosquatting is detected (domain visually similar to a brand, e.g. 'rnicrosoft.com', 'paypa1.com', 'arnazon.com'), score MUST be >= 75
+- If subdomain spoofing is detected (brand name in subdomain but real domain is different, e.g. 'google.com.evil.net'), score MUST be >= 80
+- If domain was registered less than 7 days ago AND impersonates a brand, score MUST be >= 90
+- If domain was registered less than 30 days ago AND impersonates a brand, score MUST be >= 80
+- If a password/OTP/credential form is detected on the page, score MUST be >= 65
+- If OTP sharing is explicitly requested, score MUST be >= 85
+- If VirusTotal flagged the domain as malicious, score MUST be >= 80
+- Never score a confirmed brand impersonation below 70
 - Score 0-30 = safe, 31-69 = suspicious, 70-100 = dangerous
+
+VERDICT RULES:
 - Never repeat the URL in the verdict
 - Be specific: say exactly which brand is being impersonated
 - If domain age < 30 days, always mention it
 - If OTP sharing requested, always mention it
+- If typosquatting detected, explicitly call out which letters were swapped
 - Output ONLY the JSON object. Nothing before it, nothing after it.
 
 EXAMPLES:
 
 Input: domain_age=2 days, impersonating=SBI, password_field=true, urgency=account blocked
 Output: {"score": 95, "tactics": ["visual_clone", "credential_harvest", "urgency_pressure"], "verdict_en": "This page impersonates SBI net banking. The domain was registered 2 days ago and harvests login credentials. The account blocked message is a fear tactic to force immediate action.", "verdict_hi": "यह पेज SBI नेट बैंकिंग की नकल करता है। डोमेन 2 दिन पहले बना था और लॉगिन जानकारी चुराता है। खाता बंद होने का संदेश डर पैदा करने की चाल है।"}
+
+Input: typosquat=rnicrosoft.com (rn looks like m), impersonating=Microsoft
+Output: {"score": 82, "tactics": ["brand_impersonation", "visual_clone"], "verdict_en": "This domain impersonates Microsoft by replacing 'm' with 'rn' which appears identical in most fonts — a classic typosquatting attack. Users visiting this site may believe they are on a legitimate Microsoft page. Do not enter any credentials.", "verdict_hi": "यह डोमेन Microsoft की नकल करता है, जहाँ 'm' को 'rn' से बदला गया है जो अधिकांश फॉन्ट में एक जैसा दिखता है। यह एक क्लासिक टाइपोस्क्वाटिंग हमला है। कोई भी जानकारी दर्ज न करें।"}
 
 Input: nlp_tactic=authority_claim, entity=RBI, fear_legal=true
 Output: {"score": 78, "tactics": ["authority_spoofing", "fear_legal"], "verdict_en": "This message impersonates the Reserve Bank of India to threaten legal action. The RBI never contacts individuals via SMS about account suspensions. This is a social engineering attack.", "verdict_hi": "यह संदेश RBI की नकल करके कानूनी कार्रवाई की धमकी देता है। RBI कभी SMS से खाता निलंबन की सूचना नहीं देता। यह एक सोशल इंजीनियरिंग हमला है।"}"""
@@ -62,21 +76,56 @@ def _safe_parse_json(text: str) -> dict | None:
         return None
 
 
+def _enforce_minimum_score(parsed: dict, domain_raw: dict, domain_flags: list) -> dict:
+    """Enforce mandatory minimum scores that the LLM must not go below."""
+    score = parsed.get("score", 0)
+    impersonating = domain_raw.get("impersonating")
+    age = domain_raw.get("domain_age_days", 9999)
+    flags_str = " ".join(domain_flags).lower()
+
+    # Typosquatting
+    if "typosquat" in flags_str or "impersonation (distance=" in flags_str:
+        score = max(score, 75)
+
+    # Subdomain spoofing
+    if "subdomain spoofing" in flags_str:
+        score = max(score, 80)
+
+    # Brand impersonation with new domain
+    if impersonating and impersonating != "none detected":
+        score = max(score, 70)
+        if age < 7:
+            score = max(score, 90)
+        elif age < 30:
+            score = max(score, 80)
+
+    # VirusTotal flagged
+    if "virustotal" in flags_str:
+        score = max(score, 80)
+
+    parsed["score"] = min(score, 100)
+    return parsed
+
+
 async def generate_verdict(
     req: AnalyzeRequest,
     domain: SignalResult,
     nlp: SignalResult,
     visual: SignalResult,
 ) -> dict:
+    composite_score = domain.score + nlp.score + visual.score
+
     user_content = f"""Analyze this URL for phishing and return the JSON verdict:
 
 URL: {req.url}
 Message text: {req.message or "(none)"}
 
-DOMAIN SIGNALS (score {domain.score}/40):
+DOMAIN SIGNALS (score {domain.score}/60):
 Flags: {domain.flags}
 Domain age: {domain.raw_data.get('domain_age_days', 'unknown')} days
 Impersonating: {domain.raw_data.get('impersonating', 'none detected')}
+Real domain: {domain.raw_data.get('real_domain', 'unknown')}
+Subdomain: {domain.raw_data.get('subdomain', 'none')}
 
 NLP SIGNALS (score {nlp.score}/35):
 Flags: {nlp.flags}
@@ -88,8 +137,9 @@ Flags: {visual.flags}
 Password fields: {bool(visual.raw_data.get('dom_signals', {}))}
 Page title: {visual.raw_data.get('page_title', 'N/A')}
 
-Total raw score: {domain.score + nlp.score + visual.score}/100
+Total raw score: {composite_score}/100
 
+CRITICAL: Apply the MANDATORY SCORING RULES from your system prompt before returning the score.
 Return only the JSON object."""
 
     try:
@@ -98,6 +148,9 @@ Return only the JSON object."""
         parsed = _safe_parse_json(text)
         print(f"[LLM] Parsed: {parsed}")
         if parsed:
+            # Apply hard minimum score enforcement as a safety net
+            parsed = _enforce_minimum_score(parsed, domain.raw_data, domain.flags)
+            print(f"[LLM] Final score after enforcement: {parsed['score']}")
             return parsed
     except Exception as e:
         import traceback
