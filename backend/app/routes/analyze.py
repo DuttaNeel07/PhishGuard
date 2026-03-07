@@ -96,6 +96,28 @@ async def analyze(req: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
+    # 2b. Short-circuit for known-safe domains
+    #     When the domain service identifies the URL as a known legitimate
+    #     brand, we return immediately with score=0 and include the sandbox
+    #     screenshots for transparency, but skip expensive LLM calls.
+    if "Known legitimate domain" in domain_result.flags:
+        safe_response = AnalyzeResponse(
+            score=0,
+            risk_level=RiskLevel.SAFE,
+            verdict_en="This is a verified, legitimate website.",
+            verdict_hi="यह एक सत्यापित, वैध वेबसाइट है।",
+            tactics=[],
+            domain_signals=domain_result.raw_data,
+            nlp_signals=nlp_result.raw_data,
+            visual_signals=visual_result.raw_data,
+            screenshot_b64=visual_result.raw_data.get("screenshot_b64"),
+            annotations=None,
+            scam_arc=None,
+            mitm_summary=None,
+        )
+        await set_cached_result(cache_key, safe_response.dict())
+        return safe_response
+
     # 3. Composite score
     raw_score = domain_result.score + nlp_result.score + visual_result.score
     composite_score = min(raw_score, 100)
@@ -114,7 +136,17 @@ async def analyze(req: AnalyzeRequest):
     # 6. MITM summary
     mitm_summary = _build_mitm_summary(visual_result.raw_data)
 
-    final_score = verdict_data.get("score", composite_score)
+    # 5. Final score: use composite as ground truth, let LLM adjust ±10
+    llm_score = verdict_data.get("score")
+    if llm_score is not None:
+        # Clamp the LLM score to within ±10 of the heuristic composite
+        final_score = max(
+            composite_score - 10,
+            min(llm_score, composite_score + 10)
+        )
+    else:
+        final_score = composite_score
+    final_score = min(final_score, 100)
 
     if mitm_summary and mitm_summary.terminated_early:
         final_score = min(final_score + 20, 100)

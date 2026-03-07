@@ -81,7 +81,7 @@ def _run_playwright_local(url: str) -> dict:
             ) if msg.type in ("error", "warning") else None)
 
             try:
-                response = page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                response = page.goto(url, timeout=60000, wait_until="networkidle")
                 raw["http_status"] = response.status if response else None
             except PlaywrightTimeout:
                 score += 10
@@ -90,8 +90,9 @@ def _run_playwright_local(url: str) -> dict:
                 browser.close()
                 return {"score": min(score, 25), "flags": flags, "confidence": 0.6, "raw": raw}
 
+            # Wait for page to fully render (JS frameworks, lazy-loaded images, etc.)
             try:
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(8000)
             except Exception:
                 pass
 
@@ -115,17 +116,10 @@ def _run_playwright_local(url: str) -> dict:
                 raw["suspicious_network_requests"] = suspicious_requests
             raw["network_requests"] = network_requests[:100]
 
+            # Take screenshot after full page load
             raw["screenshot_b64"] = base64.b64encode(
                 page.screenshot(full_page=True, type="png")
             ).decode()
-
-            try:
-                page.wait_for_timeout(2000)
-                raw["screenshot_b64_final"] = base64.b64encode(
-                    page.screenshot(full_page=True, type="png")
-                ).decode()
-            except Exception:
-                pass
 
             dom_signals = {}
             for sel in SUSPICIOUS_DOM_SIGNALS:
@@ -135,10 +129,9 @@ def _run_playwright_local(url: str) -> dict:
                         dom_signals[sel] = c
                 except Exception:
                     pass
-            if dom_signals:
-                score += 15
-                flags.append(f"Credential form detected: {list(dom_signals.keys())}")
-                raw["dom_signals"] = dom_signals
+            raw["dom_signals"] = dom_signals
+            # NOTE: credential forms are only flagged as suspicious when
+            # combined with other signals (see below after form analysis).
 
             forms = page.locator("form")
             suspicious_form_targets, form_actions = [], []
@@ -160,6 +153,21 @@ def _run_playwright_local(url: str) -> dict:
                 flags.append("Form submits data to external domain")
                 raw["suspicious_form_targets"] = suspicious_form_targets
             raw["form_actions"] = form_actions
+
+            # Context-aware credential form scoring:
+            # Password/OTP fields are normal on legitimate login pages.
+            # Only flag them when combined with OTHER suspicious signals.
+            has_other_signals = bool(
+                suspicious_form_targets
+                or suspicious_requests
+                or score >= 15   # already accumulated from redirects/timeout/etc.
+            )
+            if dom_signals and has_other_signals:
+                score += 15
+                flags.append(f"Credential form + suspicious context: {list(dom_signals.keys())}")
+            elif dom_signals:
+                # Just note it in raw data without adding score
+                flags.append(f"Login form present (normal for sites with accounts)")
 
             title = page.title()
             raw["page_title"] = title
