@@ -6,6 +6,7 @@ from app.services.domain_service import analyze_domain
 from app.services.nlp_service import analyze_nlp
 from app.services.sandbox_service import analyze_visual
 from app.services.llm_service import generate_verdict, generate_scam_arc, generate_annotations
+from app.services.redirect_service import analyze_chain
 from app.database import get_cached_result, set_cached_result
 from playwright.async_api import async_playwright
 import base64
@@ -29,12 +30,13 @@ async def analyze(req: AnalyzeRequest):
         cached["cached"] = True
         return AnalyzeResponse(**cached)
 
-    # 2. Run 3 tasks in parallel
+    # 2. Run background tasks in parallel (including redirect tracing)
     try:
-        domain_result, nlp_result, visual_result = await asyncio.gather(
+        domain_result, nlp_result, visual_result, redirect_data = await asyncio.gather(
             analyze_domain(req.url),
             analyze_nlp(req.message or ""),
             analyze_visual(req.url),
+            analyze_chain(req.url),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
@@ -68,6 +70,7 @@ async def analyze(req: AnalyzeRequest):
         screenshot_b64=visual_result.raw_data.get("screenshot_b64"),
         annotations=annotations,
         scam_arc=scam_arc,
+        redirect_chain=redirect_data,
     )
 
     # 7. Cache it

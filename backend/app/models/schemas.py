@@ -22,6 +22,20 @@ class AnnotationBox(BaseModel):
     bbox: List[float]
     explanation: str
 
+class RedirectHop(BaseModel):
+    step: int
+    url: str
+    status: int
+    time_ms: int
+    flags: List[str]
+
+class RedirectChainData(BaseModel):
+    initial_url: str
+    final_url: str
+    total_redirects: int
+    risk_level: str
+    chain: List[RedirectHop]
+
 class AnalyzeResponse(BaseModel):
     score: int
     risk_level: RiskLevel
@@ -34,6 +48,7 @@ class AnalyzeResponse(BaseModel):
     screenshot_b64: Optional[str] = None
     annotations: Optional[List[AnnotationBox]] = None
     scam_arc: Optional[str] = None
+    redirect_chain: Optional[RedirectChainData] = None
     cached: bool = False
 
 class ReportRequest(BaseModel):

@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, FileImage, Link } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { RedirectChain } from "@/components/RedirectChain";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -501,11 +500,6 @@ export default function Home() {
                 
               </CardContent>
             </Card>
-            
-            {/* Render Redirect Chain if data is available */}
-            {result.redirect_chain && result.redirect_chain.chain.length > 0 && (
-              <RedirectChain data={result.redirect_chain} />
-            )}
           </motion.div>
         )}
       </motion.div>
