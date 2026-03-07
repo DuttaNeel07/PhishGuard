@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import (
     AnalyzeRequest, AnalyzeResponse, RiskLevel,
-    MitmSummary, BlockedRequest,
+    MitmSummary, BlockedRequest, RedirectHop,
 )
 
 from app.services.domain_service import analyze_domain
@@ -99,6 +99,29 @@ async def analyze(req: AnalyzeRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+    # 2a. Enrich redirect chain with sandbox-detected JS redirects
+    #     httpx can only see HTTP 301/302 redirects. Playwright (sandbox) follows
+    #     JS-based redirects too. If they end up on different URLs, add the
+    #     browser-observed hop to the chain.
+    sandbox_final = visual_result.raw_data.get("final_url", "")
+    if redirect_data and sandbox_final:
+        chain_final = redirect_data.final_url
+        # Normalize for comparison (strip trailing slash, protocol)
+        def _norm(u: str) -> str:
+            return u.rstrip("/").replace("https://", "").replace("http://", "").replace("www.", "")
+        if _norm(sandbox_final) != _norm(chain_final) and _norm(sandbox_final) != _norm(req.url):
+            redirect_data.chain.append(RedirectHop(
+                step=len(redirect_data.chain) + 1,
+                url=sandbox_final,
+                status=200,
+                time_ms=0,
+                flags=["JS Redirect (detected by sandbox)"],
+            ))
+            redirect_data.final_url = sandbox_final
+            redirect_data.total_redirects += 1
+            if "JS Redirect" not in redirect_data.risk_level:
+                redirect_data.risk_level = "Medium"
 
     # 2b. Short-circuit for known-safe domains
     #     When the domain service identifies the URL as a known legitimate

@@ -72,12 +72,13 @@ export default function Home() {
     if (!selectedFile) return;
     setIsLoading(true);
     setResult(null);
+    setScreenshot(null);
 
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
 
-    const response = await fetch("/analyze/", {
+    const response = await fetch("/analyze/qr", {
       method: "POST",
       body: formData,
     });
@@ -115,7 +116,11 @@ export default function Home() {
         }
 
         const urlData = await analyzeResponse.json();
+        console.log("PhishGuard QR→URL Response:", urlData);
         setResult({ ...urlData, tactics: urlData.tactics ?? [] });
+        if (urlData.screenshot_b64) {
+          setScreenshot(`data:image/png;base64,${urlData.screenshot_b64}`);
+        }
         return;
       }
 
