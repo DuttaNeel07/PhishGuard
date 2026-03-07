@@ -1,13 +1,18 @@
 import asyncio
 import hashlib
+import tldextract
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import AnalyzeRequest, AnalyzeResponse, RiskLevel
 from app.services.domain_service import analyze_domain
 from app.services.nlp_service import analyze_nlp
 from app.services.sandbox_service import analyze_visual
 from app.services.llm_service import generate_verdict, generate_scam_arc, generate_annotations
-from app.database import get_cached_result, set_cached_result
-from playwright.async_api import async_playwright
+from app.database import get_cached_result, set_cached_result, add_to_threat_feed, get_threat_feed
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+from concurrent.futures import ThreadPoolExecutor
 import base64
 
 router = APIRouter()
@@ -70,7 +75,51 @@ async def analyze(req: AnalyzeRequest):
         scam_arc=scam_arc,
     )
 
-    # 7. Cache it
+    # 7. Add to threat feed if high risk
+    if final_score >= 40:
+        extracted = tldextract.extract(req.url)
+        domain = f"{extracted.domain}.{extracted.suffix}"
+        await add_to_threat_feed(domain, final_score, verdict_data.get("tactics", []))
+
+    # 8. Cache it
     await set_cached_result(cache_key, response.dict())
     return response
 
+
+@router.get("/threat-feed")
+async def threat_feed():
+    feed = await get_threat_feed()
+    return {"feed": feed, "count": len(feed)}
+
+
+def _take_screenshot_sync(url: str) -> str | None:
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1280,720")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options
+    )
+    try:
+        driver.get(url)
+        screenshot = driver.get_screenshot_as_png()
+        return base64.b64encode(screenshot).decode("utf-8")
+    finally:
+        driver.quit()
+
+
+@router.get("/screenshot")
+async def take_screenshot(url: str):
+    try:
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            b64 = await loop.run_in_executor(pool, _take_screenshot_sync, url)
+
+        print(f"✅ Screenshot taken, size: {len(b64)} chars")
+        return {"screenshot": f"data:image/png;base64,{b64}"}
+    except Exception as e:
+        print(f"❌ Screenshot error: {e}")
+        return {"screenshot": None, "error": str(e)}
