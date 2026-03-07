@@ -45,6 +45,19 @@ class MitmSummary(BaseModel):
     total_requests_captured: int = 0
     external_post_domains: List[str] = []
 
+class RedirectHop(BaseModel):
+    step: int
+    url: str
+    status: int
+    time_ms: int
+    flags: List[str]
+
+class RedirectChainData(BaseModel):
+    initial_url: str
+    final_url: str
+    total_redirects: int
+    risk_level: str
+    chain: List[RedirectHop]
 
 class AnalyzeResponse(BaseModel):
     score: int
@@ -60,6 +73,7 @@ class AnalyzeResponse(BaseModel):
     scam_arc: Optional[str] = None
     # mitmproxy summary — None when running in local dev (no proxy)
     mitm_summary: Optional[MitmSummary] = None
+    redirect_chain: Optional[RedirectChainData] = None
     cached: bool = False
 
 

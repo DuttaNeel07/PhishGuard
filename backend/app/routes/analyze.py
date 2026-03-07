@@ -17,6 +17,7 @@ from app.services.nlp_service import analyze_nlp
 from app.services.sandbox_service import analyze_visual
 from app.services.llm_service import generate_verdict, generate_scam_arc, generate_annotations
 
+from app.services.redirect_service import analyze_chain
 from app.database import (
     get_cached_result,
     set_cached_result,
@@ -24,10 +25,13 @@ from app.database import (
     get_threat_feed,
 )
 
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+
+from playwright.async_api import async_playwright
 
 
 router = APIRouter()
@@ -86,12 +90,13 @@ async def analyze(req: AnalyzeRequest):
         cached["cached"] = True
         return AnalyzeResponse(**cached)
 
-    # 2. Run analyzers
+    # 2. Run background tasks in parallel (including redirect tracing)
     try:
-        domain_result, nlp_result, visual_result = await asyncio.gather(
+        domain_result, nlp_result, visual_result, redirect_data = await asyncio.gather(
             analyze_domain(req.url),
             analyze_nlp(req.message or ""),
             analyze_visual(req.url),
+            analyze_chain(req.url),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
@@ -165,6 +170,7 @@ async def analyze(req: AnalyzeRequest):
         annotations=annotations,
         scam_arc=scam_arc,
         mitm_summary=mitm_summary,
+        redirect_chain=redirect_data,
     )
 
     # 8. Add to threat feed if risky
