@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, HTTPException
+import httpx  
+from app.models.schemas import QRRequest  
 
 router = APIRouter()
 
@@ -217,3 +219,75 @@ async def analyze_upi_qr(upi_string: str) -> dict:
             "error": str(e),
             "risk_level": "unknown"
         }
+@router.post("/check-qr")
+async def check_qr_for_extension(req: QRRequest):
+    """
+    Wrapper for Chrome extension — accepts image_url, 
+    downloads it, then runs your existing QR analysis.
+    """
+    # 1. Download the image from the URL
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(req.image_url)
+            response.raise_for_status()
+            image_bytes = response.content
+    except Exception as e:
+        return {
+            "is_malicious": False,
+            "decoded_url": None,
+            "reason": f"Could not download image: {str(e)}",
+        }
+
+    # 2. Run your existing QR detection logic
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if image is None:
+        return {"is_malicious": False, "decoded_url": None, "reason": "Invalid image"}
+
+    detector = cv2.QRCodeDetector()
+    retval, data, _, _ = detector.detectAndDecodeMulti(image)
+
+    if not retval or not data:
+        return {"is_malicious": False, "decoded_url": None, "reason": "No QR code found in image"}
+
+    # 3. Analyze first valid QR code found
+    for decoded in data:
+        if not decoded:
+            continue
+        decoded = decoded.strip()
+
+        if decoded.startswith("upi://"):
+            result = await analyze_upi_qr(decoded)
+            return {
+                "is_malicious": result["risk_level"] in ("dangerous", "suspicious"),
+                "decoded_url": decoded,
+                "reason": "; ".join(result.get("flags", [])) or f"UPI QR — risk: {result['risk_level']}",
+            }
+
+        elif decoded.startswith("http"):
+            # Forward the decoded URL to your analyze pipeline
+            from app.routes.analyze import analyze
+            from app.models.schemas import AnalyzeRequest, RiskLevel
+            try:
+                analyze_result = await analyze(AnalyzeRequest(url=decoded, message=None))
+                return {
+                    "is_malicious": analyze_result.risk_level in (RiskLevel.DANGEROUS, RiskLevel.SUSPICIOUS),
+                    "decoded_url": decoded,
+                    "reason": analyze_result.verdict_en,
+                }
+            except Exception as e:
+                return {
+                    "is_malicious": False,
+                    "decoded_url": decoded,
+                    "reason": f"Decoded URL found but analysis failed: {str(e)}",
+                }
+
+        else:
+            return {
+                "is_malicious": False,
+                "decoded_url": None,
+                "reason": f"QR contains text (not a URL): {decoded[:80]}",
+            }
+
+    return {"is_malicious": False, "decoded_url": None, "reason": "No valid QR data found"}

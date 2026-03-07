@@ -258,3 +258,124 @@ async def take_screenshot(url: str):
 
     except Exception as e:
         return {"screenshot": None, "error": str(e)}
+
+from app.models.schemas import URLRequest  # add to existing imports (or define inline below)
+
+@router.post("/check-url")
+async def check_url_for_extension(req: URLRequest):
+    """
+    Thin wrapper for the Chrome extension.
+    Calls the main analyze() logic and returns extension-friendly shape.
+    """
+    # Reuse your existing analyze logic
+    analyze_req = AnalyzeRequest(url=req.url, message=None)
+    result = await analyze(analyze_req)
+
+    return {
+        "is_malicious": result.risk_level in (RiskLevel.DANGEROUS, RiskLevel.SUSPICIOUS),
+        "reason": result.verdict_en,
+        "score": round(result.score / 100, 2),   # normalize 0–100 → 0.0–1.0
+        "categories": result.tactics,
+    }
+
+@router.post("/quick-check")
+async def quick_check(req: URLRequest):
+    """
+    Fast check for extension hover — skips Selenium sandbox.
+    Only runs domain + NLP analysis (responds in ~2-3 seconds).
+    """
+    cache_key = hashlib.md5(req.url.encode()).hexdigest()
+    cached = await get_cached_result(cache_key)
+    
+    if cached:
+        result = AnalyzeResponse(**cached)
+        return {
+            "is_malicious": result.risk_level in (RiskLevel.DANGEROUS, RiskLevel.SUSPICIOUS),
+            "reason": result.verdict_en,
+            "score": round(result.score / 100, 2),
+            "categories": result.tactics,
+            "cached": True,
+        }
+
+    # Only run fast analyzers — NO sandbox/Selenium
+    try:
+        domain_result, nlp_result = await asyncio.gather(
+            analyze_domain(req.url),
+            analyze_nlp(""),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    raw_score = domain_result.score + nlp_result.score
+    composite_score = min(raw_score, 100)
+
+    return {
+        "is_malicious": composite_score >= 40,
+        "reason": f"Domain + NLP signals. Score: {composite_score}/100. Flags: {', '.join(domain_result.flags[:3]) or 'none'}",
+        "score": round(composite_score / 100, 2),
+        "categories": domain_result.flags[:3],
+        "cached": False,
+    }
+@router.post("/instant-check")
+async def instant_check(req: URLRequest):
+    """
+    Zero external calls — pure regex/pattern matching.
+    Responds in under 100ms always.
+    """
+    import re
+    url = req.url.lower()
+    domain = url.split("/")[2] if "//" in url else url.split("/")[0]
+
+    # Known safe domains — instant return
+    safe_domains = [
+        "google.com", "gmail.com", "youtube.com", "facebook.com",
+        "instagram.com", "twitter.com", "x.com", "linkedin.com",
+        "github.com", "microsoft.com", "apple.com", "amazon.com",
+        "wikipedia.org", "reddit.com", "netflix.com", "spotify.com",
+        "whatsapp.com", "zoom.us", "slack.com", "discord.com",
+    ]
+    for safe in safe_domains:
+        if domain.endswith(safe):
+            return {
+                "is_malicious": False,
+                "reason": f"Trusted domain: {safe}",
+                "score": 0.0,
+                "categories": [],
+            }
+
+    # Suspicious patterns
+    flags = []
+    patterns = {
+        "ip_address":        r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
+        "too_many_hyphens":  r"-.*-.*-",
+        "suspicious_tld":    r"\.(xyz|top|click|loan|gq|tk|ml|ga|cf|pw)$",
+        "brand_in_subdomain": r"(paypal|amazon|google|apple|microsoft|bank|secure|login|verify|account|update|confirm|ebay|netflix).*\.",
+        "long_domain":       None,
+        "data_uri":          r"^data:",
+        "url_shortener":     r"(bit\.ly|tinyurl|t\.co|goo\.gl|ow\.ly|short\.io)",
+    }
+
+    if re.search(patterns["ip_address"], domain):
+        flags.append("ip_address_url")
+    if re.search(patterns["too_many_hyphens"], domain):
+        flags.append("too_many_hyphens")
+    if re.search(patterns["suspicious_tld"], domain):
+        flags.append("suspicious_tld")
+    if re.search(patterns["brand_in_subdomain"], domain):
+        flags.append("brand_impersonation")
+    if len(domain) > 40:
+        flags.append("unusually_long_domain")
+    if re.search(patterns["data_uri"], url):
+        flags.append("data_uri")
+    if re.search(patterns["url_shortener"], domain):
+        flags.append("url_shortener")
+
+    score = min(len(flags) * 0.25, 1.0)
+    is_malicious = score >= 0.25
+
+    return {
+        "is_malicious": is_malicious,
+        "reason": f"Flags: {', '.join(flags)}" if flags else "No suspicious patterns detected",
+        "score": score,
+        "categories": flags,
+    }
