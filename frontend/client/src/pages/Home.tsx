@@ -169,12 +169,9 @@ export default function Home() {
       console.log("PhishGuard API Response:", data);
       setResult(data);
 
-      // Fetch screenshot in background — skip for dangerous URLs
-      if (data.score < 70) {
-        fetch(`http://localhost:8000/analyze/screenshot?url=${encodeURIComponent(url)}`)
-          .then(r => r.json())
-          .then(s => { if (s.screenshot) setScreenshot(s.screenshot); })
-          .catch(() => {});
+      // Use screenshot from the main analysis response (captured by Playwright sandbox)
+      if (data.screenshot_b64) {
+        setScreenshot(`data:image/png;base64,${data.screenshot_b64}`);
       }
 
     } catch (error: any) {

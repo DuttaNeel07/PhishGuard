@@ -105,11 +105,26 @@ Return only the JSON object."""
         traceback.print_exc()
 
     raw_score = domain.score + nlp.score + visual.score
+    capped_score = min(raw_score, 100)
+
+    # Generate score-appropriate fallback verdicts
+    if capped_score < 30:
+        verdict_en = "No significant threats detected. This appears to be a legitimate website."
+        verdict_hi = "कोई महत्वपूर्ण खतरा नहीं मिला। यह एक वैध वेबसाइट प्रतीत होती है।"
+    elif capped_score < 70:
+        flag_summary = " ".join(domain.flags[:2]).strip()
+        verdict_en = f"Some risk signals found. {flag_summary}".strip()
+        verdict_hi = "कुछ जोखिम संकेत मिले। सावधानी बरतें।"
+    else:
+        flag_summary = " ".join(domain.flags[:2]).strip()
+        verdict_en = f"Multiple risk signals detected. {flag_summary}".strip()
+        verdict_hi = "कई जोखिम संकेत मिले। इस लिंक से बचें।"
+
     return {
-        "score": min(raw_score, 100),
+        "score": capped_score,
         "tactics": list(set(nlp.raw_data.get("tactics_found", []))),
-        "verdict_en": f"Multiple risk signals detected. {' '.join(domain.flags[:2])}".strip(),
-        "verdict_hi": "कई जोखिम संकेत मिले। सावधानी बरतें।",
+        "verdict_en": verdict_en,
+        "verdict_hi": verdict_hi,
     }
 
 

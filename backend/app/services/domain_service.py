@@ -1,3 +1,4 @@
+import re
 import whois
 import httpx
 import tldextract
@@ -34,10 +35,46 @@ BRAND_DOMAINS = {
     "linkedin.com": "LinkedIn",
 }
 
+# Set of all known-safe domains for fast exact-match lookup
+SAFE_DOMAINS = set(BRAND_DOMAINS.keys())
+
+# Map brand base keyword → set of all legitimate domains for that brand
+# e.g. "amazon" → {"amazon.in", "amazon.com"}
+BRAND_KEYWORD_TO_DOMAINS: dict[str, set[str]] = {}
+for _domain, _name in BRAND_DOMAINS.items():
+    _keyword = _domain.split(".")[0]
+    BRAND_KEYWORD_TO_DOMAINS.setdefault(_keyword, set()).add(_domain)
+
+# Reverse map: brand display name → set of all legitimate domains
+# e.g. "Amazon" → {"amazon.in", "amazon.com"}
+BRAND_NAME_TO_DOMAINS: dict[str, set[str]] = {}
+for _domain, _name in BRAND_DOMAINS.items():
+    BRAND_NAME_TO_DOMAINS.setdefault(_name, set()).add(_domain)
+
 # Brand keywords extracted from above for quick lookup
 BRAND_KEYWORDS = {domain.split(".")[0]: name for domain, name in BRAND_DOMAINS.items()}
 
-SUSPICIOUS_TLDS = {".xyz", ".top", ".click", ".loan", ".work", ".gq", ".ml", ".tk", ".cf", ".net", ".info", ".live"}
+# Minimum keyword length for subdomain/keyword spoofing checks.
+# Set to 3 to catch important short brands (sbi, rbi) while
+# _keyword_in_text's word-boundary matching prevents false positives.
+MIN_KEYWORD_LEN = 3
+
+SUSPICIOUS_TLDS = {
+    ".xyz", ".top", ".click", ".loan", ".work",
+    ".gq", ".ml", ".tk", ".cf", ".info", ".live",
+}
+# NOTE: .net was removed — it is a mainstream gTLD used by millions of legitimate sites
+
+
+def _keyword_in_text(keyword: str, text: str) -> bool:
+    """
+    Check if `keyword` appears in `text` as a distinct word/segment,
+    separated by word boundaries or common delimiters (-, .).
+    Prevents 'pay' from matching 'payday' while still catching 'pay-pal-verify'.
+    """
+    pattern = r"(?:^|[\.\-_])" + re.escape(keyword) + r"(?:$|[\.\-_])"
+    return bool(re.search(pattern, text))
+
 
 async def analyze_domain(url: str) -> SignalResult:
     score = 0
@@ -58,17 +95,41 @@ async def analyze_domain(url: str) -> SignalResult:
         raw["real_domain"] = real_domain
         raw["subdomain"] = subdomain
 
-        # 1. Subdomain spoofing — brand name in subdomain but real domain is different
-        for brand_domain, brand_name in BRAND_DOMAINS.items():
-            brand_keyword = brand_domain.split(".")[0]
-            if brand_keyword in subdomain.lower():
-                if not full_host.endswith(brand_domain):
-                    score += 50
-                    flags.append(
-                        f"Subdomain spoofing: '{brand_keyword}' in subdomain but real domain is '{real_domain}' — classic {brand_name} impersonation"
-                    )
-                    raw["impersonating"] = brand_name
-                    break
+        # ── FIX 1: Early-exit for known-safe domains ──────────────────────
+        if real_domain in SAFE_DOMAINS:
+            return SignalResult(
+                score=0,
+                flags=["Known legitimate domain"],
+                confidence=0.99,
+                raw_data=raw,
+            )
+
+        # Track whether we already flagged brand impersonation to avoid
+        # double-counting the same signal (Fix 7)
+        impersonation_detected = False
+
+        # 1. Subdomain spoofing — brand name in subdomain but real domain
+        #    is different (Fix 6: require keyword len >= MIN_KEYWORD_LEN
+        #    and use word-boundary matching)
+        if not impersonation_detected:
+            for brand_domain, brand_name in BRAND_DOMAINS.items():
+                brand_keyword = brand_domain.split(".")[0]
+                if len(brand_keyword) < MIN_KEYWORD_LEN:
+                    continue
+                if _keyword_in_text(brand_keyword, subdomain.lower()):
+                    # Make sure the real domain isn't one of that brand's
+                    # legitimate domains (Fix 2: multi-TLD check)
+                    legit_domains = BRAND_KEYWORD_TO_DOMAINS.get(brand_keyword, set())
+                    if real_domain not in legit_domains:
+                        score += 50
+                        flags.append(
+                            f"Subdomain spoofing: '{brand_keyword}' in subdomain "
+                            f"but real domain is '{real_domain}' — classic "
+                            f"{brand_name} impersonation"
+                        )
+                        raw["impersonating"] = brand_name
+                        impersonation_detected = True
+                        break
 
         # 2. Domain age via WHOIS
         try:
@@ -91,39 +152,70 @@ async def analyze_domain(url: str) -> SignalResult:
                     score += 10
                     flags.append(f"Recent domain ({age_days} days old)")
             else:
-                score += 15
-                flags.append("Domain age unknown — WHOIS lookup failed")
+                score += 5
+                flags.append("Domain age unknown — WHOIS lookup returned no data")
         except Exception as e:
-            score += 15
+            score += 5
             flags.append("Domain age unknown — WHOIS lookup failed")
             raw["whois_error"] = str(e)
 
-        # 3. Suspicious TLD
+        # 3. Suspicious TLD (Fix 4: .net removed from the set)
         if tld in SUSPICIOUS_TLDS:
             score += 20
             flags.append(f"Suspicious TLD: {tld}")
         raw["tld"] = tld
 
         # 4. Typosquatting check against real domain
-        for legit_domain, brand_name in BRAND_DOMAINS.items():
-            dist = Levenshtein.distance(real_domain, legit_domain)
-            if 0 < dist <= 3:
-                score += 35
-                flags.append(f"Possible {brand_name} impersonation (distance={dist} from {legit_domain})")
-                raw["impersonating"] = brand_name
-                break
+        #    Fix 3: skip if the input domain's base name matches the brand's
+        #    base name (prevents amazon.in flagged vs amazon.com)
+        if not impersonation_detected:
+            input_base = extracted.domain  # e.g. "amazon" from "amazon.in"
+            for legit_domain, brand_name in BRAND_DOMAINS.items():
+                legit_base = legit_domain.split(".")[0]
+                # If the base names are identical, this is just a TLD variant,
+                # not typosquatting (e.g. amazon.in vs amazon.com)
+                if input_base == legit_base:
+                    continue
+                dist = Levenshtein.distance(real_domain, legit_domain)
+                if 0 < dist <= 3:
+                    score += 35
+                    flags.append(
+                        f"Possible {brand_name} impersonation "
+                        f"(distance={dist} from {legit_domain})"
+                    )
+                    raw["impersonating"] = brand_name
+                    impersonation_detected = True
+                    break
 
         # 5. Brand keyword in real domain (not subdomain)
-        for brand_domain, brand_name in BRAND_DOMAINS.items():
-            brand_keyword = brand_domain.split(".")[0]
-            if brand_keyword in real_domain and not real_domain == brand_domain:
-                score += 30
-                flags.append(f"Brand keyword '{brand_keyword}' in suspicious domain '{real_domain}' — possible {brand_name} impersonation")
-                raw["impersonating"] = brand_name
-                break
+        #    Fix 5: use word-boundary matching instead of substring `in`
+        #    Fix 2: check against all legitimate domains for that brand
+        if not impersonation_detected:
+            for brand_domain, brand_name in BRAND_DOMAINS.items():
+                brand_keyword = brand_domain.split(".")[0]
+                if len(brand_keyword) < MIN_KEYWORD_LEN:
+                    continue
+                # If the domain name IS exactly the brand keyword, this is
+                # most likely a TLD variant (e.g. amazon.us, google.co.uk),
+                # not impersonation. Impersonation adds extra words like
+                # "amazon-login.xyz" or "pay-amazon.tk".
+                if extracted.domain == brand_keyword:
+                    continue
+                # Use the domain part only (without suffix) to check for keyword
+                if _keyword_in_text(brand_keyword, extracted.domain):
+                    legit_domains = BRAND_KEYWORD_TO_DOMAINS.get(brand_keyword, set())
+                    if real_domain not in legit_domains:
+                        score += 30
+                        flags.append(
+                            f"Brand keyword '{brand_keyword}' in suspicious "
+                            f"domain '{real_domain}' — possible "
+                            f"{brand_name} impersonation"
+                        )
+                        raw["impersonating"] = brand_name
+                        impersonation_detected = True
+                        break
 
         # 6. IP address URL
-        import re
         if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", extracted.domain):
             score += 30
             flags.append("URL uses raw IP address instead of domain name")
