@@ -4,13 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, FileImage, Link, Shield } from "lucide-react";
+import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, FileImage, Link } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useLocation } from "wouter";
-import { RedirectChain } from "@/components/RedirectChain";
 
 export default function Home() {
-  const [, navigate] = useLocation();
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -19,9 +16,10 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [screenshot, setScreenshot] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
 
+  // Generate preview URL when file changes
   useEffect(() => {
     if (!selectedFile) {
       setFilePreview(null);
@@ -55,141 +53,139 @@ export default function Home() {
     setIsDragging(false);
   }, []);
 
-  const handleFileAnalyze = async () => {
-    if (!selectedFile) return;
-    setIsLoading(true);
-    setResult(null);
+   const handleFileAnalyze = async () => {
+  if (!selectedFile) return;
+  setIsLoading(true);
+  setResult(null);
 
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
+  try {
+    const formData = new FormData();
+    formData.append("file", selectedFile);
 
-    const response = await fetch("/analyze/", {
-      method: "POST",
+    const response = await fetch('http://localhost:8000/analyze/qr', {
+      method: 'POST',
       body: formData,
     });
 
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Python backend is not running. Start it on port 8000.');
-      }
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('Python backend is not running. Start it on port 8000.');
+    }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Analysis failed (${response.status})`);
-      }
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Analysis failed (${response.status})`);
+    }
 
-      const data = await response.json();
-      console.log("PhishGuard QR Response:", data);
+    const data = await response.json();
+    console.log("PhishGuard QR Response:", data);
 
-      const qrResult = data.qr_results?.[0];
+    const qrResult = data.qr_results?.[0];
 
-      if (!qrResult) {
-        throw new Error("No QR code found in image.");
-      }
+    if (!qrResult) {
+      throw new Error("No QR code found in image.");
+    }
 
     // If QR contains a URL → forward to analyze endpoint for full analysis
     if (qrResult.type === "url" && qrResult.url_for_analysis) {
-      const analyzeResponse = await fetch("/analyze/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const analyzeResponse = await fetch('http://localhost:8000/analyze/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: qrResult.url_for_analysis }),
       });
 
-        if (!analyzeResponse.ok) {
-          const err = await analyzeResponse.json().catch(() => ({}));
-          throw new Error(err.detail || `URL analysis failed (${analyzeResponse.status})`);
-        }
-
-        const urlData = await analyzeResponse.json();
-        setResult({ ...urlData, tactics: urlData.tactics ?? [] });
-        return;
+      if (!analyzeResponse.ok) {
+        const err = await analyzeResponse.json().catch(() => ({}));
+        throw new Error(err.detail || `URL analysis failed (${analyzeResponse.status})`);
       }
 
-      if (qrResult.type === "upi") {
-        setResult({
-          score: qrResult.score ?? (
-            qrResult.risk_level === "dangerous" ? 80 :
-              qrResult.risk_level === "suspicious" ? 50 : 10
-          ),
-          verdict_en: qrResult.flags?.length
-            ? `UPI QR: ${qrResult.flags.join(". ")}`
-            : `UPI payment to ${qrResult.payee_name || qrResult.payee_vpa} — no threats detected.`,
-          verdict_hi: `UPI विश्लेषण: ${qrResult.payee_name || qrResult.payee_vpa} — ${qrResult.risk_level === "safe" ? "कोई खतरा नहीं" : "संदिग्ध गतिविधि"}`,
-          tactics: qrResult.flags ?? [],
-        });
-        return;
-      }
-
+      const urlData = await analyzeResponse.json();
       setResult({
-        score: 0,
-        verdict_en: `QR decoded (text): ${qrResult.decoded}`,
-        verdict_hi: `QR विश्लेषण: ${qrResult.decoded}`,
-        tactics: [],
+        ...urlData,
+        tactics: urlData.tactics ?? [],
       });
-
-    } catch (error: any) {
-      console.error("PhishGuard File Error:", error);
-      setResult({
-        score: 0,
-        verdict_en: `Error: ${error.message || "Could not reach the analysis server."}`,
-        verdict_hi: `त्रुटि: ${error.message || "विश्लेषण सर्वर तक नहीं पहुँच सका।"}`,
-        tactics: [],
-      });
-    } finally {
-      setIsLoading(false);
+      return;
     }
-  };
 
-  const handleAnalyze = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url) return;
+    // For UPI QR codes → normalize to result card format
+    if (qrResult.type === "upi") {
+      setResult({
+        score: qrResult.score ?? (
+          qrResult.risk_level === "dangerous" ? 80 :
+          qrResult.risk_level === "suspicious" ? 50 : 10
+        ),
+        verdict_en: qrResult.flags?.length
+          ? `UPI QR: ${qrResult.flags.join(". ")}`
+          : `UPI payment to ${qrResult.payee_name || qrResult.payee_vpa} — no threats detected.`,
+        verdict_hi: `UPI विश्लेषण: ${qrResult.payee_name || qrResult.payee_vpa} — ${qrResult.risk_level === "safe" ? "कोई खतरा नहीं" : "संदिग्ध गतिविधि"}`,
+        tactics: qrResult.flags ?? [],
+      });
+      return;
+    }
 
-    setIsLoading(true);
-    setResult(null);
-    setScreenshot(null);
-
-  try {
-    const response = await fetch("/analyze/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+    // Fallback for plain text QR codes
+    setResult({
+      score: 0,
+      verdict_en: `QR decoded (text): ${qrResult.decoded}`,
+      verdict_hi: `QR विश्लेषण: ${qrResult.decoded}`,
+      tactics: [],
     });
 
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Python backend is not running. Start it on port 8000.');
-      }
+  } catch (error: any) {
+    console.error("PhishGuard File Error:", error);
+    setResult({
+      score: 0,
+      verdict_en: `Error: ${error.message || "Could not reach the analysis server."}`,
+      verdict_hi: `त्रुटि: ${error.message || "विश्लेषण सर्वर तक नहीं पहुँच सका।"}`,
+      tactics: [],
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Analysis failed (${response.status})`);
-      }
+  const handleAnalyze = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!url) return;
 
-      const data = await response.json();
-      console.log("PhishGuard API Response:", data);
-      setResult(data);
+  setIsLoading(true);
+  setResult(null);
+  
 
-      // Fetch screenshot in background — skip for dangerous URLs
-      if (data.score < 70) {
-        fetch(`http://localhost:8000/analyze/screenshot?url=${encodeURIComponent(url)}`)
-          .then(r => r.json())
-          .then(s => { if (s.screenshot) setScreenshot(s.screenshot); })
-          .catch(() => { });
-      }
+  try {
+    const response = await fetch('http://localhost:8000/analyze/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
 
-    } catch (error: any) {
-      console.error("PhishGuard Error:", error);
-      setResult({
-        score: 0,
-        verdict_en: `Error: ${error.message || "Could not reach the analysis server."}`,
-        verdict_hi: `त्रुटि: ${error.message || "विश्लेषण सर्वर तक नहीं पहुँच सका।"}`,
-        tactics: []
-      });
-    } finally {
-      setIsLoading(false);
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('Python backend is not running. Start it on port 8000.');
     }
-  };
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Analysis failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    console.log("PhishGuard API Response:", data);
+    setResult(data);
+
+
+  } catch (error: any) {
+    console.error("PhishGuard Error:", error);
+    setResult({
+      score: 0,
+      verdict_en: `Error: ${error.message || "Could not reach the analysis server."}`,
+      verdict_hi: `त्रुटि: ${error.message || "विश्लेषण सर्वर तक नहीं पहुँच सका।"}`,
+      tactics: []
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return "text-red-500";
@@ -225,14 +221,6 @@ export default function Home() {
           <p className="text-muted-foreground text-lg max-w-lg mx-auto">
             Detect malicious intent, spoofed domains, and credential harvesting in real-time.
           </p>
-          {/* Threat Feed link */}
-          <button
-            onClick={() => navigate("/threats")}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors mt-1"
-          >
-            <Shield className="w-4 h-4" />
-            View Live Threat Intelligence Feed →
-          </button>
         </div>
 
         <Card className="border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl overflow-hidden rounded-2xl">
@@ -280,7 +268,9 @@ export default function Home() {
                     {isLoading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <>Analyze <ArrowRight className="ml-2 w-5 h-5" /></>
+                      <>
+                        Analyze <ArrowRight className="ml-2 w-5 h-5" />
+                      </>
                     )}
                   </Button>
                 </form>
@@ -319,8 +309,10 @@ export default function Home() {
                           }`}
                         data-testid="dropzone"
                       >
-                        <div className={`p-4 rounded-2xl transition-colors ${isDragging ? "bg-primary/20" : "bg-secondary/80"}`}>
-                          <Upload className={`w-8 h-8 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                        <div className={`p-4 rounded-2xl transition-colors ${isDragging ? "bg-primary/20" : "bg-secondary/80"
+                          }`}>
+                          <Upload className={`w-8 h-8 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground"
+                            }`} />
                         </div>
                         <div className="text-center space-y-1">
                           <p className="text-sm font-medium text-foreground">
@@ -345,12 +337,20 @@ export default function Home() {
                       >
                         {filePreview && (
                           <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-border/50 flex-shrink-0 bg-secondary/50">
-                            <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
+                            <img
+                              src={filePreview}
+                              alt="Preview"
+                              className="w-full h-full object-cover"
+                            />
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate text-foreground">{selectedFile.name}</p>
-                          <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                          <p className="text-sm font-medium truncate text-foreground">
+                            {selectedFile.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {(selectedFile.size / 1024).toFixed(1)} KB
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -377,7 +377,9 @@ export default function Home() {
                     {isLoading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <>Analyze File <ArrowRight className="ml-2 w-5 h-5" /></>
+                      <>
+                        Analyze File <ArrowRight className="ml-2 w-5 h-5" />
+                      </>
                     )}
                   </Button>
                 </div>
@@ -404,19 +406,24 @@ export default function Home() {
             transition={{ type: "spring", bounce: 0.4, duration: 0.6 }}
           >
             <Card className="overflow-hidden border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl relative rounded-2xl">
+              {/* Top color bar indicator */}
               <div className={`absolute top-0 left-0 w-full h-1.5 ${result.score >= 70 ? 'bg-red-500' : result.score >= 40 ? 'bg-orange-500' : 'bg-green-500'}`} />
 
               <CardContent className="p-6 sm:p-8">
                 <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-8 sm:gap-10 items-center">
 
-                  {/* Gauge */}
+                  {/* Gauge Section */}
                   <div className="flex flex-col items-center justify-center">
                     <div className="relative flex items-center justify-center w-40 h-40">
                       <svg className="w-full h-full transform -rotate-90 drop-shadow-lg">
-                        <circle cx="80" cy="80" r="72" className="stroke-secondary fill-transparent" strokeWidth="12" />
+                        <circle
+                          cx="80" cy="80" r="72"
+                          className="stroke-secondary fill-transparent"
+                          strokeWidth="12"
+                        />
                         <motion.circle
                           cx="80" cy="80" r="72"
-                          className={`fill-transparent ${getStrokeColor(result.score)}`}
+                          className={`fill-transparent ${getStrokeColor(result.score)} drop-shadow-[0_0_8px_rgba(currentColor,0.5)]`}
                           strokeWidth="12"
                           strokeDasharray={2 * Math.PI * 72}
                           initial={{ strokeDashoffset: 2 * Math.PI * 72 }}
@@ -436,7 +443,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Details */}
+                  {/* Details Section */}
                   <div className="space-y-6">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                       <h3 className="text-2xl font-bold flex items-center gap-2.5">
@@ -471,15 +478,15 @@ export default function Home() {
                         Detected Tactics
                       </p>
                       <div className="flex flex-wrap gap-2.5">
-                        {(result.tactics ?? []).map((tactic: string, i: number) => (
+                       {(result.tactics ?? []).map((tactic: string, i: number) => (
                           <Badge
                             key={i}
                             variant="outline"
                             className={`px-3 py-1 text-sm rounded-lg font-medium border ${result.score >= 70
-                                ? 'bg-red-500/10 text-red-500 border-red-500/20'
-                                : result.score >= 40
-                                  ? 'bg-orange-500/10 text-orange-500 border-orange-500/20'
-                                  : 'bg-green-500/10 text-green-500 border-green-500/20'
+                              ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                              : result.score >= 40
+                                ? 'bg-orange-500/10 text-orange-500 border-orange-500/20'
+                                : 'bg-green-500/10 text-green-500 border-green-500/20'
                               }`}
                           >
                             {tactic}
@@ -487,34 +494,12 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
+
                   </div>
                 </div>
-
-                {/* Screenshot Preview */}
-                {screenshot && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="mt-6 rounded-xl overflow-hidden border border-border/50"
-                  >
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em] px-1 py-3">
-                      Page Preview
-                    </p>
-                    <img
-                      src={screenshot}
-                      alt="Website screenshot"
-                      className="w-full object-cover max-h-64 rounded-lg"
-                    />
-                  </motion.div>
-                )}
+                
               </CardContent>
             </Card>
-
-            {/* Render Redirect Chain if data is available */}
-            {result.redirect_chain && result.redirect_chain.chain.length > 0 && (
-              <RedirectChain data={result.redirect_chain} />
-            )}
           </motion.div>
         )}
       </motion.div>
