@@ -1,0 +1,26 @@
+# ── PhishGuard Sandbox Container ──────────────────────────────────
+# Isolated Playwright environment for live browser sessions.
+#
+# Build:  docker build -f Dockerfile.sandbox -t phishguard-sandbox .
+# Run:    docker-compose -f docker-compose.sandbox.yml up
+# ──────────────────────────────────────────────────────────────────
+
+FROM mcr.microsoft.com/playwright/python:v1.49.1-noble
+
+WORKDIR /sandbox
+
+# Install dependencies
+RUN pip install --no-cache-dir fastapi uvicorn[standard] websockets
+
+# Copy server
+COPY sandbox/sandbox_ws_server.py .
+
+# Playwright browsers are pre-installed in the base image
+
+# Run as non-root for extra safety
+RUN useradd -m sandboxuser
+USER sandboxuser
+
+EXPOSE 9222
+
+CMD ["uvicorn", "sandbox_ws_server:app", "--host", "0.0.0.0", "--port", "9222"]

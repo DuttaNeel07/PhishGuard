@@ -1,0 +1,43 @@
+# PhishGuard Sandbox — Docker Compose
+# Run:  docker-compose -f docker-compose.sandbox.yml up --build
+
+services:
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    container_name: phishguard-sandbox
+    ports:
+      - "9222:9222"
+    # ── Security hardening ──
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN    # Required for Chromium sandbox inside Docker
+    security_opt:
+      - seccomp=unconfined   # Playwright needs this
+      - no-new-privileges
+    # ── Resource limits ──
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+    # ── Networking ──
+    # The container can reach the internet (to load target sites)
+    # but cannot reach the host's internal services
+    networks:
+      - sandbox_net
+    environment:
+      - HOME=/home/sandboxuser
+    tmpfs:
+      - /tmp:size=256M
+    read_only: true
+    restart: unless-stopped
+
+networks:
+  sandbox_net:
+    driver: bridge
+    internal: false   # Allow outbound internet access

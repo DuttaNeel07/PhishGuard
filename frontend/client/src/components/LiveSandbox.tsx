@@ -138,13 +138,29 @@ export function LiveSandbox({ url, onClose }: LiveSandboxProps) {
     [mapCoords, send]
   );
 
-  const handleScroll = useCallback(
-    (e: React.WheelEvent<HTMLCanvasElement>) => {
-      const { x, y } = mapCoords(e);
+  // Use native wheel event to reliably prevent page scrolling
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault(); // Stop outer page from scrolling
+      
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = REMOTE_WIDTH / rect.width;
+      const scaleY = REMOTE_HEIGHT / rect.height;
+      const x = Math.round((e.clientX - rect.left) * scaleX);
+      const y = Math.round((e.clientY - rect.top) * scaleY);
+      
       send({ type: "scroll", x, y, deltaX: e.deltaX, deltaY: e.deltaY });
-    },
-    [mapCoords, send]
-  );
+    };
+
+    // { passive: false } is strictly required to allow preventDefault()
+    canvas.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [send]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -265,7 +281,6 @@ export function LiveSandbox({ url, onClose }: LiveSandboxProps) {
             e.preventDefault();
             handleClick(e);
           }}
-          onWheel={handleScroll}
           onMouseMove={handleMouseMove}
           onKeyDown={handleKeyDown}
           tabIndex={0}
