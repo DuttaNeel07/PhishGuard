@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, FileImage, Link, Shield, ChevronDown, Globe, Activity, AlertTriangle, Wifi, Camera } from "lucide-react";
+import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, QrCode, Link, Shield, ChevronDown, Globe, Activity, AlertTriangle, Wifi, Camera } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { RedirectChain } from "@/components/RedirectChain";
@@ -214,10 +214,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col items-center pt-24 px-4 font-sans selection:bg-primary selection:text-primary-foreground relative overflow-hidden">
-      {/* Background glowing blobs */}
-      <div className="absolute top-0 inset-x-0 h-full w-full pointer-events-none z-0 flex justify-center">
-        <div className="absolute top-[-10%] w-[80vw] max-w-[800px] h-[400px] bg-primary/10 blur-[120px] rounded-full opacity-50" />
+    <div className="min-h-screen bg-background text-foreground flex flex-col items-center pt-20 px-4 font-sans selection:bg-primary/30 selection:text-primary-foreground relative overflow-hidden bg-grid">
+      {/* Ambient background effects */}
+      <div className="absolute top-0 inset-x-0 h-full w-full pointer-events-none z-0">
+        <div className="absolute top-[-15%] left-1/2 -translate-x-1/2 w-[90vw] max-w-[900px] h-[500px] bg-primary/8 blur-[150px] rounded-full" />
+        <div className="absolute top-[30%] right-[-10%] w-[400px] h-[400px] bg-cyan-500/5 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[10%] left-[-5%] w-[300px] h-[300px] bg-primary/5 blur-[100px] rounded-full" />
       </div>
 
       <motion.div
@@ -225,27 +227,30 @@ export default function Home() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-2xl z-10 space-y-10"
       >
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-secondary/80 border border-border/50 mb-2 shadow-inner">
-            <ShieldAlert className="w-8 h-8 text-primary" />
+        <div className="text-center space-y-5">
+          <div className="relative inline-flex items-center justify-center">
+            <div className="absolute w-16 h-16 bg-primary/20 rounded-full pulse-ring" />
+            <div className="relative p-4 rounded-2xl bg-secondary/80 border border-primary/20 shadow-lg shadow-primary/10">
+              <ShieldAlert className="w-8 h-8 text-primary" />
+            </div>
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground">
-            Phishing URL Analyzer
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
+            <span className="gradient-text">PhishGuard</span>
           </h1>
-          <p className="text-muted-foreground text-lg max-w-lg mx-auto">
-            Detect malicious intent, spoofed domains, and credential harvesting in real-time.
+          <p className="text-muted-foreground text-lg max-w-lg mx-auto leading-relaxed">
+            Advanced threat intelligence for phishing detection, domain analysis, and credential harvesting prevention.
           </p>
-          {/* Threat Feed link */}
           <button
             onClick={() => navigate("/threats")}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors mt-1"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-all duration-300 mt-1 group"
           >
-            <Shield className="w-4 h-4" />
-            View Live Threat Intelligence Feed →
+            <Shield className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            View Live Threat Intelligence Feed
+            <ArrowRight className="w-3 h-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
           </button>
         </div>
 
-        <Card className="border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl overflow-hidden rounded-2xl">
+        <Card className="border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl overflow-hidden rounded-2xl glow-border">
           <CardContent className="p-2 sm:p-4">
             <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as "url" | "file")} className="w-full">
               <TabsList className="w-full mb-3 bg-background/50 border border-border/50 rounded-xl h-12 p-1">
@@ -262,8 +267,8 @@ export default function Home() {
                   className="flex-1 h-full rounded-lg text-sm font-semibold gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all"
                   data-testid="tab-file"
                 >
-                  <FileImage className="w-4 h-4" />
-                  Upload File
+                  <QrCode className="w-4 h-4" />
+                  Upload QR
                 </TabsTrigger>
               </TabsList>
 
@@ -400,10 +405,34 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-16 space-y-5"
+            className="flex flex-col items-center justify-center py-16 space-y-6"
           >
-            <Loader2 className="w-12 h-12 animate-spin text-primary" />
-            <p className="text-muted-foreground font-medium animate-pulse text-lg">Running heuristic analysis...</p>
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full border-2 border-primary/20 flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full border-2 border-t-primary border-r-primary border-b-transparent border-l-transparent animate-spin" />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-primary" />
+              </div>
+            </div>
+            <div className="text-center space-y-2">
+              <p className="text-foreground font-semibold text-lg">Analyzing Threat Vectors</p>
+              <p className="text-muted-foreground text-sm">Domain intelligence · Sandbox · Network analysis</p>
+            </div>
+            <div className="flex gap-3">
+              {["Domain", "Sandbox", "NLP", "AI Verdict"].map((step, i) => (
+                <motion.div
+                  key={step}
+                  initial={{ opacity: 0.3 }}
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.3 }}
+                  className="flex items-center gap-1.5"
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  <span className="text-xs text-muted-foreground font-medium">{step}</span>
+                </motion.div>
+              ))}
+            </div>
           </motion.div>
         )}
 
@@ -413,32 +442,59 @@ export default function Home() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: "spring", bounce: 0.4, duration: 0.6 }}
           >
-            <Card className="overflow-hidden border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl relative rounded-2xl">
-              <div className={`absolute top-0 left-0 w-full h-1.5 ${result.score >= 70 ? 'bg-red-500' : result.score >= 40 ? 'bg-orange-500' : 'bg-green-500'}`} />
+            <Card className={`overflow-hidden border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl relative rounded-2xl ${
+              result.score >= 70
+                ? 'shadow-red-500/10'
+                : result.score >= 40
+                  ? 'shadow-orange-500/10'
+                  : 'shadow-primary/10'
+            }`}>
+              <div className={`absolute top-0 left-0 w-full h-1 ${
+                result.score >= 70
+                  ? 'bg-gradient-to-r from-red-500/0 via-red-500 to-red-500/0'
+                  : result.score >= 40
+                    ? 'bg-gradient-to-r from-orange-500/0 via-orange-500 to-orange-500/0'
+                    : 'bg-gradient-to-r from-primary/0 via-primary to-primary/0'
+              }`} />
 
               <CardContent className="p-6 sm:p-8">
                 <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-8 sm:gap-10 items-center">
 
                   {/* Gauge */}
                   <div className="flex flex-col items-center justify-center">
-                    <div className="relative flex items-center justify-center w-40 h-40">
-                      <svg className="w-full h-full transform -rotate-90 drop-shadow-lg">
-                        <circle cx="80" cy="80" r="72" className="stroke-secondary fill-transparent" strokeWidth="12" />
+                    <div className="relative flex items-center justify-center w-44 h-44">
+                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 160 160">
+                        <circle cx="80" cy="80" r="68" className="fill-transparent" stroke="hsl(222 30% 12%)" strokeWidth="10" />
                         <motion.circle
-                          cx="80" cy="80" r="72"
+                          cx="80" cy="80" r="68"
                           className={`fill-transparent ${getStrokeColor(result.score)}`}
-                          strokeWidth="12"
-                          strokeDasharray={2 * Math.PI * 72}
-                          initial={{ strokeDashoffset: 2 * Math.PI * 72 }}
-                          animate={{ strokeDashoffset: (2 * Math.PI * 72) - ((result.score / 100) * (2 * Math.PI * 72)) }}
+                          strokeWidth="10"
+                          strokeDasharray={2 * Math.PI * 68}
+                          initial={{ strokeDashoffset: 2 * Math.PI * 68 }}
+                          animate={{ strokeDashoffset: (2 * Math.PI * 68) - ((result.score / 100) * (2 * Math.PI * 68)) }}
                           transition={{ duration: 1.5, ease: "easeOut" }}
                           strokeLinecap="round"
+                          filter="url(#glow)"
                         />
+                        <defs>
+                          <filter id="glow">
+                            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                            <feMerge>
+                              <feMergeNode in="coloredBlur" />
+                              <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                          </filter>
+                        </defs>
                       </svg>
                       <div className="absolute flex flex-col items-center justify-center">
-                        <span className={`text-5xl font-bold tracking-tighter ${getScoreColor(result.score)}`}>
+                        <motion.span
+                          className={`text-5xl font-extrabold tracking-tighter ${getScoreColor(result.score)}`}
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
+                        >
                           {result.score}
-                        </span>
+                        </motion.span>
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] mt-1">
                           Risk Score
                         </span>
@@ -824,6 +880,14 @@ export default function Home() {
           </motion.div>
         )}
       </motion.div>
+
+      {/* Footer */}
+      <footer className="w-full max-w-2xl z-10 mt-16 mb-8 text-center">
+        <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-6" />
+        <p className="text-xs text-muted-foreground/50">
+          PhishGuard — Advanced Threat Intelligence Platform
+        </p>
+      </footer>
     </div>
   );
 }
