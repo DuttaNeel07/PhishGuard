@@ -32,12 +32,17 @@ async function checkUrl(url) {
   if (cached) return cached;
 
   try {
-    const response = await fetch(`${apiBase}/analyze/quick-check`, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(`${apiBase}/analyze/instant-check`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
-      signal: AbortSignal.timeout(8000),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
@@ -67,12 +72,17 @@ async function checkQr(imageUrl) {
   if (cached) return cached;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
     const response = await fetch(`${apiBase}/analyze/check-qr`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_url: imageUrl }),
-      signal: AbortSignal.timeout(30000),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
@@ -109,32 +119,34 @@ function setBadge(tabId, count) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "phishguard-check-link",
-    title: "🛡️ Check link with PhishGuard",
+    title: "Check link with PhishGuard",
     contexts: ["link"],
   });
   chrome.contextMenus.create({
     id: "phishguard-check-image",
-    title: "🔍 Scan image for QR code",
+    title: "Scan image for QR code",
     contexts: ["image"],
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "phishguard-check-link" && info.linkUrl) {
-    const result = await checkUrl(info.linkUrl);
-    chrome.tabs.sendMessage(tab.id, {
-      type: "SHOW_CONTEXT_RESULT",
-      url: info.linkUrl,
-      result,
+    checkUrl(info.linkUrl).then((result) => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "SHOW_CONTEXT_RESULT",
+        url: info.linkUrl,
+        result,
+      });
     });
   }
   if (info.menuItemId === "phishguard-check-image" && info.srcUrl) {
-    const result = await checkQr(info.srcUrl);
-    chrome.tabs.sendMessage(tab.id, {
-      type: "SHOW_CONTEXT_RESULT",
-      url: info.srcUrl,
-      result,
-      isQr: true,
+    checkQr(info.srcUrl).then((result) => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "SHOW_CONTEXT_RESULT",
+        url: info.srcUrl,
+        result,
+        isQr: true,
+      });
     });
   }
 });
@@ -159,30 +171,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// ─── Intercept Chrome's "dangerous site" navigation ──────────────────────────
-// When Chrome flags a page, we also send it to PhishGuard for our own analysis
-chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
-  if (details.frameId !== 0) return; // main frame only
+// ─── Intercept navigation for dangerous-site warnings ────────────────────────
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return;
   const url = details.url;
   if (!url.startsWith("http")) return;
 
-  const result = await checkUrl(url);
-  if (result.status === "dangerous") {
-    // Notify the tab's content script to show a warning overlay
-    chrome.tabs.sendMessage(details.tabId, {
-      type: "PHISHGUARD_BLOCK_WARNING",
-      url,
-      result,
-    }).catch(() => {}); // tab may not have content script yet
+  checkUrl(url).then((result) => {
+    if (result.status === "dangerous") {
+      chrome.tabs.sendMessage(details.tabId, {
+        type: "PHISHGUARD_BLOCK_WARNING",
+        url,
+        result,
+      }).catch(() => {});
 
-    setBadge(details.tabId, 1);
-
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon48.png",
-      title: "⚠️ PhishGuard Alert",
-      message: `Dangerous link detected!\n${url.slice(0, 80)}`,
-      priority: 2,
-    });
-  }
+      setBadge(details.tabId, 1);
+    }
+  });
 });

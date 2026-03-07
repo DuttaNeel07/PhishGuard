@@ -3,7 +3,8 @@
 (function () {
   "use strict";
 
-  const API_BASE = "http://localhost:8000";
+  // API calls are routed through the background service worker
+  // (content scripts cannot make cross-origin XHR in MV3)
 
   let tooltip = null;
   let hoverTimer = null;
@@ -95,36 +96,27 @@
     }
   }
 
-  // ─── XHR helper ───────────────────────────────────────────────────────────
-  function checkUrlXhr(url, onResult, onError) {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_BASE}/analyze/instant-check`, true);
-    xhr.setRequestHeader("Content-Type", "application/json");
-    xhr.timeout = 15000;
-
-    xhr.onload = function () {
-      if (xhr.status === 200) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          onResult({
-            status: data.is_malicious ? "dangerous" : "safe",
-            reason: data.reason || "",
-            score: data.score ?? null,
-            categories: data.categories || [],
-            checkedAt: Date.now(),
-          });
-        } catch (e) {
-          onError("Parse error");
+  // ─── Check URL via background service worker ──────────────────────────────
+  function checkUrlViaBackground(url, onResult, onError) {
+    try {
+      chrome.runtime.sendMessage({ type: "CHECK_URL", url }, (response) => {
+        if (chrome.runtime.lastError) {
+          onError("Extension error: " + chrome.runtime.lastError.message);
+          return;
         }
-      } else {
-        onError(`HTTP ${xhr.status}`);
-      }
-    };
-
-    xhr.ontimeout = function () { onError("Request timed out"); };
-    xhr.onerror   = function () { onError("Backend unreachable"); };
-
-    xhr.send(JSON.stringify({ url }));
+        if (!response) {
+          onError("No response from background");
+          return;
+        }
+        if (response.status === "error") {
+          onError(response.reason || "Backend unreachable");
+          return;
+        }
+        onResult(response);
+      });
+    } catch (e) {
+      onError("Extension unavailable");
+    }
   }
 
   // ─── Hover Logic ───────────────────────────────────────────────────────────
@@ -152,7 +144,7 @@
     hoverTimer = setTimeout(() => {
       showTooltip(e.clientX, e.clientY, "loading", { url });
 
-      checkUrlXhr(url,
+      checkUrlViaBackground(url,
         (result) => {
           checkedLinks.set(url, result);
 
@@ -194,7 +186,7 @@
     links.forEach((link, i) => {
       setTimeout(() => {
         const url = link.href;
-        checkUrlXhr(url,
+        checkUrlViaBackground(url,
           (result) => {
             checkedLinks.set(url, result);
             if (result.status === "dangerous") {
