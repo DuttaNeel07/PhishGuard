@@ -4,10 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, QrCode, Link, Shield, ChevronDown, Globe, Activity, AlertTriangle, Wifi, Camera } from "lucide-react";
+import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, QrCode, Link, Shield, ChevronDown, Globe, Activity, AlertTriangle, Wifi, Camera, Monitor } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { RedirectChain } from "@/components/RedirectChain";
+import { LiveSandbox } from "@/components/LiveSandbox";
 
 export default function Home() {
   const [, navigate] = useLocation();
@@ -21,6 +22,7 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+  const [showLiveView, setShowLiveView] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleSection = (key: string) =>
@@ -838,42 +840,61 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 5. Screenshot */}
-                  {screenshot && (
-                    <div className="rounded-xl border border-border/50 overflow-hidden bg-background/30">
-                      <button
-                        onClick={() => toggleSection("screenshot")}
-                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-secondary/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-blue-500/10">
-                            <Camera className="w-4 h-4 text-blue-500" />
-                          </div>
-                          <span className="font-semibold text-sm">Page Screenshot</span>
+                  {/* 5. Live Sandbox View / Screenshot */}
+                  <div className="rounded-xl border border-border/50 overflow-hidden bg-background/30">
+                    <button
+                      onClick={() => toggleSection("screenshot")}
+                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-secondary/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-blue-500/10">
+                          <Monitor className="w-4 h-4 text-blue-500" />
                         </div>
-                        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expandedSections.screenshot ? 'rotate-180' : ''}`} />
-                      </button>
-                      <AnimatePresence>
-                        {expandedSections.screenshot && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="px-5 pb-5">
-                              <img
-                                src={screenshot}
-                                alt="Website screenshot"
-                                className="w-full rounded-lg border border-border/30 shadow-lg"
+                        <span className="font-semibold text-sm">Live Sandbox View</span>
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expandedSections.screenshot ? 'rotate-180' : ''}`} />
+                    </button>
+                    <AnimatePresence>
+                      {expandedSections.screenshot && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-5 pb-5 space-y-4">
+                            {!showLiveView ? (
+                              <div className="flex flex-col items-center gap-4 py-6">
+                                {screenshot && (
+                                  <img
+                                    src={screenshot}
+                                    alt="Website screenshot"
+                                    className="w-full rounded-lg border border-border/30 shadow-lg opacity-60"
+                                  />
+                                )}
+                                <button
+                                  onClick={() => setShowLiveView(true)}
+                                  className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+                                >
+                                  <Monitor className="w-4 h-4" />
+                                  Launch Live Interactive View
+                                </button>
+                                <p className="text-[11px] text-muted-foreground text-center max-w-sm">
+                                  Browse the website in an isolated sandbox. Your data stays safe — all interaction happens in a sandboxed browser.
+                                </p>
+                              </div>
+                            ) : (
+                              <LiveSandbox
+                                url={url || result?.redirect_chain?.final_url || ''}
+                                onClose={() => setShowLiveView(false)}
                               />
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )}
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
               </CardContent>
