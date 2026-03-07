@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, FileImage, Link, Shield } from "lucide-react";
+import { Loader2, ShieldAlert, ShieldCheck, Languages, ArrowRight, Upload, X, FileImage, Link, Shield, ChevronDown, Globe, Activity, AlertTriangle, Wifi, Camera } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { RedirectChain } from "@/components/RedirectChain";
@@ -20,7 +20,20 @@ export default function Home() {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleSection = (key: string) =>
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const formatDomainAge = (days: number | string | undefined) => {
+    if (days === undefined || days === "unknown") return "Unknown";
+    const d = Number(days);
+    if (d < 0) return "Unknown";
+    if (d < 30) return `${d} days (⚠️ Very New)`;
+    if (d < 365) return `${Math.floor(d / 30)} months`;
+    return `${(d / 365).toFixed(1)} years`;
+  };
 
   useEffect(() => {
     if (!selectedFile) {
@@ -487,24 +500,321 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Screenshot Preview */}
-                {screenshot && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="mt-6 rounded-xl overflow-hidden border border-border/50"
-                  >
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em] px-1 py-3">
-                      Page Preview
-                    </p>
-                    <img
-                      src={screenshot}
-                      alt="Website screenshot"
-                      className="w-full object-cover max-h-64 rounded-lg"
-                    />
-                  </motion.div>
-                )}
+                {/* ──── PROFESSIONAL SECURITY REPORT ──── */}
+                <div className="mt-8 space-y-3">
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.15em] mb-4">
+                    Detailed Security Report
+                  </p>
+
+                  {/* 1. Domain Intelligence */}
+                  {result.domain_signals && (
+                    <div className="rounded-xl border border-border/50 overflow-hidden bg-background/30">
+                      <button
+                        onClick={() => toggleSection("domain")}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${result.domain_signals.impersonating ? 'bg-red-500/10' : 'bg-green-500/10'}`}>
+                            <Globe className={`w-4 h-4 ${result.domain_signals.impersonating ? 'text-red-500' : 'text-green-500'}`} />
+                          </div>
+                          <span className="font-semibold text-sm">Domain Intelligence</span>
+                          {result.domain_signals.impersonating && (
+                            <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">
+                              Impersonation Detected
+                            </Badge>
+                          )}
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expandedSections.domain ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {expandedSections.domain && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="p-3 rounded-lg bg-secondary/30 border border-border/30">
+                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Domain Age</p>
+                                <p className={`text-sm font-bold mt-1 ${
+                                  result.domain_signals.domain_age_days !== undefined &&
+                                  Number(result.domain_signals.domain_age_days) < 30
+                                    ? 'text-red-500' : 'text-foreground'
+                                }`}>
+                                  {formatDomainAge(result.domain_signals.domain_age_days)}
+                                </p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-secondary/30 border border-border/30">
+                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">TLD</p>
+                                <p className="text-sm font-bold mt-1">{result.domain_signals.tld || "N/A"}</p>
+                              </div>
+                              {result.domain_signals.registrar && (
+                                <div className="p-3 rounded-lg bg-secondary/30 border border-border/30 sm:col-span-2">
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Registrar</p>
+                                  <p className="text-sm font-bold mt-1">{result.domain_signals.registrar}</p>
+                                </div>
+                              )}
+                              {result.domain_signals.impersonating && (
+                                <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20 sm:col-span-2">
+                                  <p className="text-[10px] uppercase tracking-wider text-red-500 font-semibold">⚠ Impersonating</p>
+                                  <p className="text-sm font-bold mt-1 text-red-500">{result.domain_signals.impersonating}</p>
+                                </div>
+                              )}
+                              {result.domain_signals.virustotal && (
+                                <div className="p-3 rounded-lg bg-secondary/30 border border-border/30 sm:col-span-2">
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">VirusTotal</p>
+                                  <p className="text-sm font-bold mt-1">
+                                    {typeof result.domain_signals.virustotal === 'object'
+                                      ? `${result.domain_signals.virustotal.malicious || 0} engines flagged`
+                                      : String(result.domain_signals.virustotal)
+                                    }
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* 2. Sandbox Analysis */}
+                  {result.visual_signals && (
+                    <div className="rounded-xl border border-border/50 overflow-hidden bg-background/30">
+                      <button
+                        onClick={() => toggleSection("sandbox")}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${
+                            (result.visual_signals.suspicious_form_targets?.length > 0 || result.visual_signals.suspicious_network_requests?.length > 0)
+                              ? 'bg-red-500/10' : 'bg-green-500/10'
+                          }`}>
+                            <Activity className={`w-4 h-4 ${
+                              (result.visual_signals.suspicious_form_targets?.length > 0 || result.visual_signals.suspicious_network_requests?.length > 0)
+                                ? 'text-red-500' : 'text-green-500'
+                            }`} />
+                          </div>
+                          <span className="font-semibold text-sm">Sandbox Analysis</span>
+                          {result.visual_signals.timeout && (
+                            <Badge variant="outline" className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-[10px]">
+                              Timed Out
+                            </Badge>
+                          )}
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expandedSections.sandbox ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {expandedSections.sandbox && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-5 space-y-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-secondary/30 border border-border/30">
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">HTTP Status</p>
+                                  <p className={`text-sm font-bold mt-1 ${
+                                    result.visual_signals.http_status && result.visual_signals.http_status >= 400
+                                      ? 'text-red-500' : 'text-foreground'
+                                  }`}>
+                                    {result.visual_signals.http_status ?? "N/A"}
+                                  </p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-secondary/30 border border-border/30">
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Page Title</p>
+                                  <p className="text-sm font-bold mt-1 truncate">{result.visual_signals.page_title || "N/A"}</p>
+                                </div>
+                              </div>
+                              {result.visual_signals.final_url && (
+                                <div className="p-3 rounded-lg bg-secondary/30 border border-border/30">
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Final URL (after redirects)</p>
+                                  <p className="text-xs font-medium mt-1 text-muted-foreground break-all">{result.visual_signals.final_url}</p>
+                                </div>
+                              )}
+                              {result.visual_signals.dom_signals && Object.keys(result.visual_signals.dom_signals).length > 0 && (
+                                <div className="p-3 rounded-lg bg-orange-500/5 border border-orange-500/20">
+                                  <p className="text-[10px] uppercase tracking-wider text-orange-500 font-semibold">DOM Signals Detected</p>
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {Object.entries(result.visual_signals.dom_signals).map(([selector, count]: [string, any]) => (
+                                      <Badge key={selector} variant="outline" className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-[10px]">
+                                        {selector} × {count}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {result.visual_signals.suspicious_form_targets?.length > 0 && (
+                                <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+                                  <p className="text-[10px] uppercase tracking-wider text-red-500 font-semibold">⚠ Suspicious Form Targets</p>
+                                  {result.visual_signals.suspicious_form_targets.map((target: string, i: number) => (
+                                    <p key={i} className="text-xs font-medium mt-1 text-red-400 break-all">{target}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* 3. Attack Scenario */}
+                  {result.scam_arc && result.score >= 40 && (
+                    <div className="rounded-xl border border-red-500/30 overflow-hidden bg-red-500/5">
+                      <button
+                        onClick={() => toggleSection("attack")}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-red-500/10 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-red-500/10">
+                            <AlertTriangle className="w-4 h-4 text-red-500" />
+                          </div>
+                          <span className="font-semibold text-sm text-red-500">Attack Scenario — What Would Happen</span>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-red-400 transition-transform duration-200 ${expandedSections.attack ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {expandedSections.attack && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-5">
+                              <p className="text-sm leading-relaxed text-red-300/90 whitespace-pre-line">{result.scam_arc}</p>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* 4. Network Activity */}
+                  {result.visual_signals && (result.visual_signals.suspicious_network_requests?.length > 0 || result.visual_signals.network_requests?.length > 0) && (
+                    <div className="rounded-xl border border-border/50 overflow-hidden bg-background/30">
+                      <button
+                        onClick={() => toggleSection("network")}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${
+                            result.visual_signals.suspicious_network_requests?.length > 0
+                              ? 'bg-red-500/10' : 'bg-green-500/10'
+                          }`}>
+                            <Wifi className={`w-4 h-4 ${
+                              result.visual_signals.suspicious_network_requests?.length > 0
+                                ? 'text-red-500' : 'text-green-500'
+                            }`} />
+                          </div>
+                          <span className="font-semibold text-sm">Network Activity</span>
+                          <Badge variant="outline" className="bg-secondary/50 text-muted-foreground border-border/50 text-[10px]">
+                            {result.visual_signals.network_requests?.length ?? 0} requests
+                          </Badge>
+                          {result.visual_signals.suspicious_network_requests?.length > 0 && (
+                            <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px]">
+                              {result.visual_signals.suspicious_network_requests.length} suspicious
+                            </Badge>
+                          )}
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expandedSections.network ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {expandedSections.network && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-5 space-y-3">
+                              {result.visual_signals.suspicious_network_requests?.length > 0 && (
+                                <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+                                  <p className="text-[10px] uppercase tracking-wider text-red-500 font-semibold mb-2">⚠ Data Exfiltration — External POST Requests</p>
+                                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    {result.visual_signals.suspicious_network_requests.map((req: any, i: number) => (
+                                      <div key={i} className="flex items-start gap-2 text-xs">
+                                        <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[9px] shrink-0">
+                                          {req.method}
+                                        </Badge>
+                                        <span className="text-red-400 break-all">{req.url}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {result.mitm_summary && result.mitm_summary.blocked_requests?.length > 0 && (
+                                <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+                                  <p className="text-[10px] uppercase tracking-wider text-red-500 font-semibold mb-2">MITM Proxy — Blocked Requests</p>
+                                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    {result.mitm_summary.blocked_requests.map((req: any, i: number) => (
+                                      <div key={i} className="flex items-start gap-2 text-xs">
+                                        <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[9px] shrink-0">
+                                          {req.reason}
+                                        </Badge>
+                                        <span className="text-red-400 break-all">{req.url}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="p-3 rounded-lg bg-secondary/30 border border-border/30">
+                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Network Requests</p>
+                                <p className="text-sm font-bold mt-1">{result.visual_signals.network_requests?.length ?? 0}</p>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* 5. Screenshot */}
+                  {screenshot && (
+                    <div className="rounded-xl border border-border/50 overflow-hidden bg-background/30">
+                      <button
+                        onClick={() => toggleSection("screenshot")}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-blue-500/10">
+                            <Camera className="w-4 h-4 text-blue-500" />
+                          </div>
+                          <span className="font-semibold text-sm">Page Screenshot</span>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${expandedSections.screenshot ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {expandedSections.screenshot && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-5 pb-5">
+                              <img
+                                src={screenshot}
+                                alt="Website screenshot"
+                                className="w-full rounded-lg border border-border/30 shadow-lg"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </div>
+
               </CardContent>
             </Card>
             {/* Render Redirect Chain if data is available */}

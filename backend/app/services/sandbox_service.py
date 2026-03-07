@@ -81,7 +81,7 @@ def _run_playwright_local(url: str) -> dict:
             ) if msg.type in ("error", "warning") else None)
 
             try:
-                response = page.goto(url, timeout=60000, wait_until="networkidle")
+                response = page.goto(url, timeout=60000, wait_until="domcontentloaded")
                 raw["http_status"] = response.status if response else None
             except PlaywrightTimeout:
                 score += 10
