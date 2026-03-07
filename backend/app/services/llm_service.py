@@ -157,7 +157,6 @@ Return only the JSON object."""
         print(f"[LLM] generate_verdict error: {e}")
         traceback.print_exc()
 
-<<<<<<< HEAD
     raw_score = domain.score + nlp.score + visual.score
     capped_score = min(raw_score, 100)
 
@@ -176,10 +175,6 @@ Return only the JSON object."""
 
     return {
         "score": capped_score,
-=======
-    return {
-        "score": min(composite_score, 100),
->>>>>>> 4f10eb3 (redirect chaining added)
         "tactics": list(set(nlp.raw_data.get("tactics_found", []))),
         "verdict_en": verdict_en,
         "verdict_hi": verdict_hi,

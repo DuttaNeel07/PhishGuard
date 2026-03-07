@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, Variants } from "framer-motion";
 import { ShieldAlert, ShieldCheck, AlertTriangle, ArrowDown, Clock, Link as LinkIcon, Server } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,7 +26,7 @@ interface RedirectChainProps {
 export function RedirectChain({ data }: RedirectChainProps) {
   if (!data || !data.chain || data.chain.length === 0) return null;
 
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -34,7 +34,7 @@ export function RedirectChain({ data }: RedirectChainProps) {
     },
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, x: -20, y: 10 },
     visible: {
       opacity: 1,
