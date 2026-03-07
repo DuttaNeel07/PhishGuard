@@ -31,11 +31,6 @@ def score_to_risk(score: int) -> RiskLevel:
 
 
 def _build_mitm_summary(raw_data: dict) -> MitmSummary | None:
-    """
-    Pull mitmproxy data out of visual_result.raw_data and build a clean
-    MitmSummary object for the API response.
-    Returns None if no mitm data is present (local dev mode).
-    """
     mitm = raw_data.get("mitm")
     if not mitm:
         return None
@@ -102,7 +97,7 @@ async def analyze(req: AnalyzeRequest):
     # 6. Build mitmproxy summary
     mitm_summary = _build_mitm_summary(visual_result.raw_data)
 
-    # 7. If mitm terminated early, bump score — this is strong evidence
+    # 7. If mitm terminated early, bump score
     final_score = verdict_data.get("score", composite_score)
     if mitm_summary and mitm_summary.terminated_early:
         final_score = min(final_score + 20, 100)
@@ -165,7 +160,6 @@ async def take_screenshot(url: str):
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
             b64 = await loop.run_in_executor(pool, _take_screenshot_sync, url)
-
         print(f"✅ Screenshot taken, size: {len(b64)} chars")
         return {"screenshot": f"data:image/png;base64,{b64}"}
     except Exception as e:
