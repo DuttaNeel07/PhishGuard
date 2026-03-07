@@ -313,10 +313,11 @@ export default function Home() {
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onClick={() => fileInputRef.current?.click()}
-                        className={`relative flex flex-col items-center justify-center gap-3 p-8 sm:p-10 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 ${isDragging
+                        className={`relative flex flex-col items-center justify-center gap-3 p-8 sm:p-10 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
+                          isDragging
                             ? "border-primary bg-primary/10 scale-[1.01]"
                             : "border-border/60 bg-background/30 hover:border-primary/50 hover:bg-primary/5"
-                          }`}
+                        }`}
                         data-testid="dropzone"
                       >
                         <div className={`p-4 rounded-2xl transition-colors ${isDragging ? "bg-primary/20" : "bg-secondary/80"}`}>
