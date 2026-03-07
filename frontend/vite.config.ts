@@ -29,6 +29,11 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      "/sandbox": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        ws: true,
+      },
     },
     fs: {
       strict: true,
