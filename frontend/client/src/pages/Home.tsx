@@ -516,7 +516,6 @@ export default function Home() {
                 )}
               </CardContent>
             </Card>
-
             {/* Render Redirect Chain if data is available */}
             {result.redirect_chain && result.redirect_chain.chain.length > 0 && (
               <RedirectChain data={result.redirect_chain} />
