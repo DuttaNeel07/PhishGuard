@@ -8,7 +8,7 @@
   let tooltip = null;
   let hoverTimer = null;
   let dangerousCount = 0;
-  const checkedLinks = new Map(); // url → result
+  const checkedLinks = new Map();
 
   // ─── Create Tooltip Element ────────────────────────────────────────────────
   function createTooltip() {
@@ -74,7 +74,6 @@
       urlPrev.style.display = "none";
     }
 
-    // Position
     const tipW = 280;
     const tipH = 100;
     let left = x + 14;
@@ -96,6 +95,38 @@
     }
   }
 
+  // ─── XHR helper ───────────────────────────────────────────────────────────
+  function checkUrlXhr(url, onResult, onError) {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/analyze/instant-check`, true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.timeout = 15000;
+
+    xhr.onload = function () {
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          onResult({
+            status: data.is_malicious ? "dangerous" : "safe",
+            reason: data.reason || "",
+            score: data.score ?? null,
+            categories: data.categories || [],
+            checkedAt: Date.now(),
+          });
+        } catch (e) {
+          onError("Parse error");
+        }
+      } else {
+        onError(`HTTP ${xhr.status}`);
+      }
+    };
+
+    xhr.ontimeout = function () { onError("Request timed out"); };
+    xhr.onerror   = function () { onError("Backend unreachable"); };
+
+    xhr.send(JSON.stringify({ url }));
+  }
+
   // ─── Hover Logic ───────────────────────────────────────────────────────────
   document.addEventListener("mousemove", (e) => {
     const link = e.target.closest("a[href]");
@@ -110,53 +141,36 @@
 
     clearTimeout(hoverTimer);
 
-    // If already cached, show immediately
+    // Show cached result immediately
     if (checkedLinks.has(url)) {
       const result = checkedLinks.get(url);
       showTooltip(e.clientX, e.clientY, result.status, { url, reason: result.reason });
       return;
     }
 
-    // Show loading after 150ms hover
+    // Wait 150ms then check
     hoverTimer = setTimeout(() => {
       showTooltip(e.clientX, e.clientY, "loading", { url });
 
-      // ── Direct fetch to backend (bypasses message passing timeout) ──
-      fetch(`${API_BASE}/analyze/quick-check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-        signal: AbortSignal.timeout(8000),
-      })
-      .then(r => r.json())
-      .then(data => {
-        const result = {
-          status: data.is_malicious ? "dangerous" : "safe",
-          reason: data.reason || "",
-          score: data.score ?? null,
-          categories: data.categories || [],
-          checkedAt: Date.now(),
-        };
-        checkedLinks.set(url, result);
+      checkUrlXhr(url,
+        (result) => {
+          checkedLinks.set(url, result);
 
-        // Only update tooltip if still hovering this link
-        const hovered = document.querySelector(":hover");
-        if (hovered && hovered.closest(`a[href="${CSS.escape(link.getAttribute("href"))}"]`)) {
-          showTooltip(e.clientX, e.clientY, result.status, { url, reason: result.reason });
-        }
+          const hovered = document.querySelector(":hover");
+          if (hovered && hovered.closest(`a[href="${CSS.escape(link.getAttribute("href"))}"]`)) {
+            showTooltip(e.clientX, e.clientY, result.status, { url, reason: result.reason });
+          }
 
-        if (result.status === "dangerous") {
-          markLinkDangerous(link);
-          dangerousCount++;
-          chrome.runtime.sendMessage({ type: "SET_BADGE", count: dangerousCount });
+          if (result.status === "dangerous") {
+            markLinkDangerous(link);
+            dangerousCount++;
+            chrome.runtime.sendMessage({ type: "SET_BADGE", count: dangerousCount });
+          }
+        },
+        (errMsg) => {
+          showTooltip(e.clientX, e.clientY, "error", { url, reason: errMsg });
         }
-      })
-      .catch((err) => {
-        showTooltip(e.clientX, e.clientY, "error", {
-          url,
-          reason: "Backend unreachable",
-        });
-      });
+      );
 
     }, 150);
   });
@@ -180,37 +194,21 @@
     links.forEach((link, i) => {
       setTimeout(() => {
         const url = link.href;
-
-        fetch(`${API_BASE}/analyze/quick-check`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-          signal: AbortSignal.timeout(8000),
-        })
-        .then(r => r.json())
-        .then(data => {
-          const result = {
-            status: data.is_malicious ? "dangerous" : "safe",
-            reason: data.reason || "",
-            score: data.score ?? null,
-            categories: data.categories || [],
-            checkedAt: Date.now(),
-          };
-          checkedLinks.set(url, result);
-
-          if (result.status === "dangerous") {
-            markLinkDangerous(link);
-            dangerousCount++;
-            chrome.runtime.sendMessage({ type: "SET_BADGE", count: dangerousCount });
-          }
-        })
-        .catch(() => {});
-
-      }, i * 150);
+        checkUrlXhr(url,
+          (result) => {
+            checkedLinks.set(url, result);
+            if (result.status === "dangerous") {
+              markLinkDangerous(link);
+              dangerousCount++;
+              chrome.runtime.sendMessage({ type: "SET_BADGE", count: dangerousCount });
+            }
+          },
+          () => {}
+        );
+      }, i * 200);
     });
   }
 
-  // Run scan after page settles
   if (document.readyState === "complete") {
     setTimeout(scanVisibleLinks, 1500);
   } else {
@@ -299,7 +297,6 @@
     `;
 
     document.body.prepend(overlay);
-
     document.getElementById("pg-go-back").onclick = () => history.back();
     document.getElementById("pg-dismiss").onclick = () => overlay.remove();
   }
