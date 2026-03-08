@@ -150,11 +150,43 @@ async def analyze(req: AnalyzeRequest):
     raw_score = domain_result.score + nlp_result.score + visual_result.score
     composite_score = min(raw_score, 100)
 
-    # 4. LLM verdict + scam arc
+    # 4. LLM verdict + scam arc (run in parallel)
+    # Build rich context for the scam arc from all signals
+    _visual_raw = visual_result.raw_data
+    _domain_raw = domain_result.raw_data
+    _nlp_raw = nlp_result.raw_data
+    _redirect_count = (redirect_data.total_redirects if redirect_data else 0)
+
     verdict_data, scam_arc = await asyncio.gather(
         generate_verdict(req, domain_result, nlp_result, visual_result),
-        generate_scam_arc(req.url, composite_score),
+        generate_scam_arc(
+            url=req.url,
+            score=composite_score,
+            page_title=_visual_raw.get("page_title", ""),
+            impersonating=_domain_raw.get("impersonating", ""),
+            tactics=verdict_data.get("tactics", []) if False else [],  # populated after gather
+            has_password_form=_visual_raw.get("has_password_form", False),
+            has_otp_form=_visual_raw.get("has_otp_form", False),
+            urgency_words=_nlp_raw.get("urgency_words", []),
+            redirect_count=_redirect_count,
+            page_text_snippet=_visual_raw.get("page_text", "")[:300],
+        ),
     )
+
+    # Re-run scam arc with tactics now that verdict_data is available
+    if verdict_data.get("tactics"):
+        scam_arc = await generate_scam_arc(
+            url=req.url,
+            score=composite_score,
+            page_title=_visual_raw.get("page_title", ""),
+            impersonating=_domain_raw.get("impersonating", ""),
+            tactics=verdict_data.get("tactics", []),
+            has_password_form=_visual_raw.get("has_password_form", False),
+            has_otp_form=_visual_raw.get("has_otp_form", False),
+            urgency_words=_nlp_raw.get("urgency_words", []),
+            redirect_count=_redirect_count,
+            page_text_snippet=_visual_raw.get("page_text", "")[:300],
+        )
 
     # 5. Screenshot annotations
     annotations = await generate_annotations(

@@ -181,25 +181,64 @@ Return only the JSON object."""
     }
 
 
-async def generate_scam_arc(url: str, score: int) -> str:
+async def generate_scam_arc(
+    url: str,
+    score: int,
+    page_title: str = "",
+    impersonating: str = "",
+    tactics: list = None,
+    has_password_form: bool = False,
+    has_otp_form: bool = False,
+    urgency_words: list = None,
+    redirect_count: int = 0,
+    page_text_snippet: str = "",
+) -> str:
     if score < 40:
         return ""
 
-    prompt = f"""A victim in India received this suspicious link. Risk score: {score}/100.
+    tactics = tactics or []
+    urgency_words = urgency_words or []
 
-Write exactly 4 sentences describing what would happen if they clicked, in second person:
-1. What they see when the page loads
-2. What they are asked to enter or do
-3. How their money or data gets stolen
-4. What the attacker does next
+    # Build a rich, specific context block for the LLM
+    context_lines = [f"Suspicious URL: {url}", f"Risk score: {score}/100"]
 
-Be specific to Indian context (UPI, OTP, Aadhaar, bank names). No markdown, no bullet points, just 4 plain sentences."""
+    if page_title:
+        context_lines.append(f"Page title: \"{page_title}\"")
+    if impersonating:
+        context_lines.append(f"Brand being impersonated: {impersonating}")
+    if tactics:
+        context_lines.append(f"Detected attack tactics: {', '.join(tactics)}")
+    if has_password_form:
+        context_lines.append("Page contains a password/login form")
+    if has_otp_form:
+        context_lines.append("Page contains an OTP entry field")
+    if urgency_words:
+        context_lines.append(f"Urgency phrases found on page: {', '.join(urgency_words[:5])}")
+    if redirect_count > 0:
+        context_lines.append(f"URL went through {redirect_count} redirect(s) before reaching this page")
+    if page_text_snippet:
+        context_lines.append(f"Page text excerpt: \"{page_text_snippet[:300]}\"")
+
+    context = "\n".join(context_lines)
+
+    prompt = f"""Based on the following analysis of a suspicious webpage, write exactly 4 sentences describing what would happen if a victim clicked this link. Use second person ("you").
+
+{context}
+
+Your 4 sentences must cover:
+1. What the victim sees when the page loads (be specific to the detected brand/title above, not generic)
+2. What they are asked to do or enter (mention specific form fields found)
+3. Exactly how their money or data gets stolen based on what was found
+4. What the attacker does with the stolen data next
+
+Be specific to THIS page's context. Do not mention brands or tactics that were not detected above.
+No markdown, no bullet points. Output only 4 plain sentences."""
 
     try:
         text = await _call_groq(
             [{"role": "user", "content": prompt}],
-            max_tokens=250,
-            system="You are a cybersecurity educator explaining scam tactics to Indian users. Be specific and realistic."
+            max_tokens=300,
+            system="You are a cybersecurity educator explaining exactly how a specific scam page works. Be precise and use only the context provided — do not invent details not supported by the analysis."
         )
         return text.strip()
     except Exception:
