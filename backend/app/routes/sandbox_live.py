@@ -20,9 +20,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 router = APIRouter()
 
 # ── Configuration ────────────────────────────────────────────────────────
-# Set this env var to enable Docker-isolated mode:
-#   SANDBOX_LIVE_URL=ws://localhost:9222
-SANDBOX_LIVE_URL = os.getenv("SANDBOX_LIVE_URL", "")
+# Set this to True to enable dynamic Docker-isolated mode:
+#   SANDBOX_USE_DOCKER=1
+SANDBOX_USE_DOCKER = os.getenv("SANDBOX_USE_DOCKER", "1").lower() in ("1", "true", "yes")
 
 MAX_CONCURRENT_SESSIONS = 3
 SESSION_TIMEOUT_SECONDS = 120
@@ -30,25 +30,83 @@ VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 800
 FRAME_QUALITY = 60
 
+# We need a range of ports for the dynamic containers
+# Base port starts at 9222 and goes up based on active sessions
+BASE_PORT = 9222
+
 _active_sessions = 0
 _session_lock = asyncio.Lock()
+_used_ports = set()
 
 
-# ── Docker proxy mode ──────────────────────────────────────────────────
-async def _proxy_to_docker(ws: WebSocket, url: str):
+def _get_available_port():
+    for port in range(BASE_PORT, BASE_PORT + 20):
+        if port not in _used_ports:
+            return port
+    return BASE_PORT + 99
+
+
+# ── Dynamic Docker Mode ────────────────────────────────────────────────
+async def _run_dynamic_docker(ws: WebSocket, url: str):
     """
-    Proxy WebSocket messages between the frontend client and the
-    Docker sandbox container. The container runs the actual browser.
+    Spawns a new Docker container specifically for this session,
+    proxies WebSocket traffic to it, and kills it when done.
     """
     import websockets
-
-    sandbox_ws_url = f"{SANDBOX_LIVE_URL}/ws?url={url}"
-
+    
+    port = _get_available_port()
+    _used_ports.add(port)
+    
+    container_name = f"phishguard-sandbox-{int(time.time())}-{port}"
+    
+    # Spawn the container
     try:
+        await ws.send_json({"type": "status", "status": "connecting", "message": "Spawning isolated container..."})
+        
+        # We assume the image `phishguard-sandbox` was built previously
+        cmd = [
+            "docker", "run", "-d", "--rm",
+            "--name", container_name,
+            "-p", f"{port}:9222",
+            "--cap-drop=ALL",
+            "--cap-add=SYS_ADMIN",
+            "--security-opt", "seccomp=unconfined",
+            "--security-opt", "no-new-privileges",
+            "--cpus=1.0",
+            "-m=512m",
+            "phishguard-sandbox"
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await process.communicate()
+        
+        if process.returncode != 0:
+            raise Exception("Failed to start Docker container. Is Docker running and 'phishguard-sandbox' image built?")
+
+        # Wait for the container's WebSocket server to be ready
+        sandbox_ws_url = f"ws://localhost:{port}/ws?url={url}"
+        
+        ready = False
+        for _ in range(15): # try for ~7.5 seconds
+            try:
+                # Just test connection
+                async with websockets.connect(sandbox_ws_url) as test_ws:
+                    ready = True
+                    break
+            except Exception:
+                await asyncio.sleep(0.5)
+                
+        if not ready:
+            raise Exception("Container started but server did not become ready in time.")
+            
+        # Proxy traffic bidirectionally
         async with websockets.connect(sandbox_ws_url) as sandbox_ws:
 
             async def forward_to_client():
-                """Relay messages from sandbox container → frontend client."""
                 try:
                     async for message in sandbox_ws:
                         await ws.send_text(message)
@@ -56,7 +114,6 @@ async def _proxy_to_docker(ws: WebSocket, url: str):
                     pass
 
             async def forward_to_sandbox():
-                """Relay messages from frontend client → sandbox container."""
                 try:
                     while True:
                         data = await ws.receive_text()
@@ -66,7 +123,6 @@ async def _proxy_to_docker(ws: WebSocket, url: str):
                 except Exception:
                     pass
 
-            # Run both directions concurrently
             done, pending = await asyncio.wait(
                 [
                     asyncio.create_task(forward_to_client()),
@@ -78,7 +134,21 @@ async def _proxy_to_docker(ws: WebSocket, url: str):
                 task.cancel()
 
     except Exception as e:
-        await ws.send_json({"type": "error", "message": f"Sandbox container error: {e}"})
+        await ws.send_json({"type": "error", "message": f"Sandbox error: {e}"})
+        
+    finally:
+        # Guarantee cleanup
+        _used_ports.discard(port)
+        try:
+            kill_cmd = ["docker", "rm", "-f", container_name]
+            kill_proc = await asyncio.create_subprocess_exec(
+                *kill_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await kill_proc.communicate()
+        except Exception:
+            pass
 
 
 # ── Local Playwright mode (dev fallback) ──────────────────────────────
@@ -179,7 +249,11 @@ async def _run_local(ws: WebSocket, url: str):
                     if new_url:
                         if not new_url.startswith("http"):
                             new_url = "https://" + new_url
-                        await page.goto(new_url, timeout=15000, wait_until="domcontentloaded")
+                        try:
+                            await page.goto(new_url, timeout=15000, wait_until="domcontentloaded")
+                        except Exception as e:
+                            # Ignore navigation/timeout errors (e.g. JS redirects)
+                            pass
                         await ws.send_json({"type": "url", "url": page.url})
                         await ws.send_json({"type": "title", "title": await page.title()})
                 elif t == "back":
@@ -247,9 +321,9 @@ async def sandbox_live(ws: WebSocket, url: str = ""):
         _active_sessions += 1
 
     try:
-        if SANDBOX_LIVE_URL:
-            # Docker mode — fully isolated
-            await _proxy_to_docker(ws, url)
+        if SANDBOX_USE_DOCKER:
+            # Dynamic Docker mode — fully isolated per session
+            await _run_dynamic_docker(ws, url)
         else:
             # Dev mode — local Playwright (less secure, but works without Docker)
             await _run_local(ws, url)

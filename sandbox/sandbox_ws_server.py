@@ -156,8 +156,11 @@ async def live_session(ws: WebSocket, url: str = ""):
                     if new_url:
                         if not new_url.startswith("http"):
                             new_url = "https://" + new_url
-                        await page.goto(new_url, timeout=15000,
-                                        wait_until="domcontentloaded")
+                        try:
+                            await page.goto(new_url, timeout=15000, wait_until="domcontentloaded")
+                        except Exception as e:
+                            # Ignore navigation/timeout errors (e.g. if a JS redirect interrupts it)
+                            pass
                         await ws.send_json({"type": "url", "url": page.url})
                         await ws.send_json({"type": "title", "title": await page.title()})
                 elif t == "back":

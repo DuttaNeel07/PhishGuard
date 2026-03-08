@@ -5,12 +5,12 @@
 # Run:    docker-compose -f docker-compose.sandbox.yml up
 # ──────────────────────────────────────────────────────────────────
 
-FROM mcr.microsoft.com/playwright/python:v1.49.1-noble
+FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
 
 WORKDIR /sandbox
 
 # Install dependencies
-RUN pip install --no-cache-dir fastapi uvicorn[standard] websockets
+RUN pip install --no-cache-dir fastapi uvicorn[standard] websockets playwright==1.58.0
 
 # Copy server
 COPY sandbox/sandbox_ws_server.py .
