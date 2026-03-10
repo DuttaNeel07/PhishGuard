@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishGuard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700;800&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #080b12;
+      --surface: #0f1420;
+      --surface2: #161d2e;
+      --border: #1e2a40;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59,130,246,0.15);
+      --danger: #ef4444;
+      --danger-glow: rgba(239,68,68,0.15);
+      --safe: #10b981;
+      --warn: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --mono: 'JetBrains Mono', monospace;
+      --display: 'Syne', sans-serif;
+    }
+
+    body {
+      width: 360px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--display);
+      min-height: 480px;
+    }
+
+    /* ── Header ── */
+    .header {
+      padding: 20px 20px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -20px; right: -20px;
+      width: 100px; height: 100px;
+      background: var(--accent-glow);
+      border-radius: 50%;
+      filter: blur(30px);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+    }
+    .logo-text {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #93c5fd, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .logo-tag {
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-family: var(--mono);
+    }
+
+    /* ── API Status ── */
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 6px 10px;
+      background: var(--surface2);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .status-dot.online  { background: var(--safe); box-shadow: 0 0 6px var(--safe); }
+    .status-dot.offline { background: var(--danger); }
+    .status-text {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      flex: 1;
+    }
+    .status-url {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 0;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: var(--display);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* ── Tab Content ── */
+    .tab-content { display: none; padding: 16px; }
+    .tab-content.active { display: block; }
+
+    /* ── URL Input area ── */
+    .input-label {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-family: var(--mono);
+      margin-bottom: 8px;
+    }
+
+    .url-input-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 10px 12px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    textarea { height: 72px; }
+
+    .btn-check {
+      width: 100%;
+      padding: 11px;
+      background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-family: var(--display);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: all 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-check:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.4); }
+    .btn-check:active { transform: translateY(0); }
+    .btn-check:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── Result Card ── */
+    .result-card {
+      margin-top: 14px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      display: none;
+    }
+    .result-card.show { display: block; }
+    .result-card.safe    { border-color: #064e3b; }
+    .result-card.danger  { border-color: #7f1d1d; }
+    .result-card.error   { border-color: #374151; }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+    }
+    .result-card.safe   .result-header { background: linear-gradient(135deg, #022c22, #064e3b); }
+    .result-card.danger .result-header { background: linear-gradient(135deg, #1c0a0a, #2d0f0f); }
+    .result-card.error  .result-header { background: var(--surface2); }
+
+    .result-icon { font-size: 22px; }
+    .result-status-text {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .result-card.safe   .result-status-text { color: #34d399; }
+    .result-card.danger .result-status-text { color: #f87171; }
+    .result-card.error  .result-status-text { color: var(--muted); }
+
+    .result-body { padding: 12px 14px; background: var(--surface); }
+
+    .result-reason {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .result-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .meta-chip {
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Page stats ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 24px;
+      font-weight: 800;
+      font-family: var(--mono);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .stat-number.danger { color: var(--danger); }
+    .stat-number.safe   { color: var(--safe); }
+    .stat-number.muted  { color: var(--muted); }
+    .stat-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .btn-rescan {
+      width: 100%;
+      padding: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--display);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: all 0.15s;
+    }
+    .btn-rescan:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Settings ── */
+    .settings-row {
+      margin-bottom: 14px;
+    }
+    .settings-label {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-family: var(--mono);
+      margin-bottom: 6px;
+    }
+    .settings-hint {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 5px;
+      font-family: var(--mono);
+    }
+    .btn-save {
+      width: 100%;
+      padding: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      color: var(--accent);
+      font-family: var(--display);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-save:hover { background: var(--accent); color: #fff; }
+    .save-confirm {
+      font-size: 11px;
+      color: var(--safe);
+      text-align: center;
+      margin-top: 8px;
+      display: none;
+    }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PhishGuard</div>
+        <div class="logo-tag">Sandbox Scanner</div>
+      </div>
+    </div>
+    <div class="api-status">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">Checking backend…</span>
+      <span class="status-url" id="statusUrl"></span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="check">Check URL</button>
+    <button class="tab" data-tab="page">This Page</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+
+  <!-- Tab: Check URL -->
+  <div class="tab-content active" id="tab-check">
+    <div class="input-label">URL or QR image URL</div>
+    <div class="url-input-wrap">
+      <textarea id="urlInput" placeholder="https://suspicious-link.com/…"></textarea>
+      <button class="btn-check" id="btnCheck">Scan URL</button>
+    </div>
+
+    <div class="result-card" id="resultCard">
+      <div class="result-header">
+        <span class="result-icon" id="resultIcon"></span>
+        <span class="result-status-text" id="resultStatus"></span>
+      </div>
+      <div class="result-body">
+        <div class="result-reason" id="resultReason"></div>
+        <div class="result-meta" id="resultMeta"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: This Page -->
+  <div class="tab-content" id="tab-page">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-number danger" id="statDanger">–</div>
+        <div class="stat-label">Dangerous</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number safe" id="statSafe">–</div>
+        <div class="stat-label">Safe</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number muted" id="statTotal">–</div>
+        <div class="stat-label">Total Links</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number muted" id="statQr">–</div>
+        <div class="stat-label">QR Codes</div>
+      </div>
+    </div>
+    <button class="btn-rescan" id="btnRescan">🔄 Rescan Page</button>
+  </div>
+
+  <!-- Tab: Settings -->
+  <div class="tab-content" id="tab-settings">
+    <div class="settings-row">
+      <div class="settings-label">Backend API URL</div>
+      <input type="text" id="apiBaseInput" placeholder="http://localhost:8000" />
+      <div class="settings-hint">Your FastAPI server address (local or deployed)</div>
+    </div>
+    <button class="btn-save" id="btnSave">Save Settings</button>
+    <div class="save-confirm" id="saveConfirm">✓ Saved!</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

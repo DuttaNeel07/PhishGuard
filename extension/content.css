@@ -1,0 +1,274 @@
+/* ─── PhishGuard Content Styles ─────────────────────────────────────────────── */
+
+#phishguard-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  width: 280px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.pg-tooltip-inner {
+  background: #0f1117;
+  border: 1px solid #1e2330;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.pg-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #1e2330;
+  background: #0a0d14;
+}
+
+.pg-shield-icon { font-size: 14px; }
+
+.pg-tooltip-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7dd3fc;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: 1;
+}
+
+.pg-status-dot { font-size: 14px; }
+
+.pg-tooltip-body {
+  padding: 10px 14px;
+}
+
+.pg-status-label {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.pg-reason {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.pg-url-preview {
+  font-size: 10px;
+  color: #475569;
+  font-family: 'Courier New', monospace;
+  word-break: break-all;
+}
+
+.pg-tooltip-footer {
+  padding: 6px 14px;
+  background: #0a0d14;
+  border-top: 1px solid #1e2330;
+}
+
+.pg-powered {
+  font-size: 9px;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* State variants */
+#phishguard-tooltip.pg-state-dangerous .pg-tooltip-inner {
+  border-color: #7f1d1d;
+  box-shadow: 0 8px 32px rgba(239,68,68,0.2), 0 0 0 1px rgba(239,68,68,0.1);
+}
+#phishguard-tooltip.pg-state-safe .pg-tooltip-inner {
+  border-color: #064e3b;
+}
+
+/* ─── Dangerous link highlight ───────────────────────────────────────────────── */
+a.phishguard-dangerous {
+  background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.08)) !important;
+  border-bottom: 2px solid #ef4444 !important;
+  border-radius: 2px !important;
+  padding-bottom: 1px !important;
+}
+
+a.phishguard-dangerous::after {
+  content: " ⚠️";
+  font-size: 0.8em;
+}
+
+/* ─── Context result banner ──────────────────────────────────────────────────── */
+#phishguard-banner {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 2147483646;
+  width: 360px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  animation: pgSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pgSlideIn {
+  from { transform: translateX(400px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+.pg-banner-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.pg-banner-icon { font-size: 24px; flex-shrink: 0; }
+
+.pg-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pg-banner-text strong { font-size: 14px; display: block; }
+.pg-banner-text span   { font-size: 11px; opacity: 0.7; }
+.pg-banner-text em     { font-size: 11px; opacity: 0.6; font-style: normal; }
+
+.pg-banner-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.5;
+  padding: 0;
+  flex-shrink: 0;
+}
+.pg-banner-close:hover { opacity: 1; }
+
+#phishguard-banner.pg-banner-danger {
+  background: linear-gradient(135deg, #1c0a0a, #2d0f0f);
+  border: 1px solid #7f1d1d;
+  color: #fca5a5;
+}
+#phishguard-banner.pg-banner-safe {
+  background: linear-gradient(135deg, #022c22, #064e3b);
+  border: 1px solid #065f46;
+  color: #6ee7b7;
+}
+#phishguard-banner.pg-banner-warn {
+  background: linear-gradient(135deg, #1c1507, #292007);
+  border: 1px solid #78350f;
+  color: #fcd34d;
+}
+
+/* ─── Block overlay ──────────────────────────────────────────────────────────── */
+#phishguard-block-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  backdrop-filter: blur(8px);
+  animation: pgFadeIn 0.25s ease;
+}
+
+@keyframes pgFadeIn {
+  from { opacity: 0; } to { opacity: 1; }
+}
+
+.pg-block-modal {
+  background: #0f1117;
+  border: 1px solid #7f1d1d;
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 480px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 0 80px rgba(239,68,68,0.3), 0 20px 60px rgba(0,0,0,0.8);
+}
+
+.pg-block-shield {
+  font-size: 56px;
+  margin-bottom: 16px;
+  animation: pgPulse 2s ease infinite;
+}
+
+@keyframes pgPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.05); }
+}
+
+.pg-block-modal h2 {
+  color: #ef4444;
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.pg-block-subtitle {
+  color: #94a3b8;
+  font-size: 14px;
+  margin: 0 0 20px;
+}
+.pg-block-subtitle strong { color: #ef4444; }
+
+.pg-block-url {
+  background: #1e2330;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #64748b;
+  font-family: monospace;
+  word-break: break-all;
+  margin-bottom: 12px;
+}
+
+.pg-block-reason {
+  color: #f87171;
+  font-size: 13px;
+  margin-bottom: 24px;
+  padding: 8px 12px;
+  background: rgba(239,68,68,0.08);
+  border-radius: 6px;
+  border-left: 3px solid #ef4444;
+  text-align: left;
+}
+
+.pg-block-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.pg-btn-safe {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pg-btn-safe:hover { background: #059669; }
+
+.pg-btn-dismiss {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pg-btn-dismiss:hover { color: #94a3b8; border-color: #475569; }

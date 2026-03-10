@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import base64
+import re
 import tldextract
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from app.models.schemas import (
     AnalyzeRequest, AnalyzeResponse, RiskLevel,
     MitmSummary, BlockedRequest, RedirectHop,
+    URLRequest,
 )
 
 from app.services.domain_service import analyze_domain
@@ -28,10 +30,6 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
-
-from concurrent.futures import ThreadPoolExecutor
-from playwright.async_api import async_playwright
-import base64
 
 router = APIRouter()
 
@@ -164,7 +162,7 @@ async def analyze(req: AnalyzeRequest):
     # 6. MITM summary
     mitm_summary = _build_mitm_summary(visual_result.raw_data)
 
-    # 5. Final score: use composite as ground truth, let LLM adjust ±10
+    # 7. Final score: use composite as ground truth, let LLM adjust ±10
     llm_score = verdict_data.get("score")
     if llm_score is not None:
         # Clamp the LLM score to within ±10 of the heuristic composite
@@ -245,7 +243,7 @@ def _take_screenshot_sync(url: str) -> str | None:
 async def take_screenshot(url: str):
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         with ThreadPoolExecutor() as pool:
             b64 = await loop.run_in_executor(
@@ -258,3 +256,157 @@ async def take_screenshot(url: str):
 
     except Exception as e:
         return {"screenshot": None, "error": str(e)}
+
+
+
+@router.post("/check-url")
+async def check_url_for_extension(req: URLRequest):
+    """
+    Thin wrapper for the Chrome extension.
+    Calls the main analyze() logic and returns extension-friendly shape.
+    """
+    # Reuse your existing analyze logic
+    analyze_req = AnalyzeRequest(url=req.url, message=None)
+    result = await analyze(analyze_req)
+
+    return {
+        "is_malicious": result.risk_level in (RiskLevel.DANGEROUS, RiskLevel.SUSPICIOUS),
+        "reason": result.verdict_en,
+        "score": round(result.score / 100, 2),   # normalize 0–100 → 0.0–1.0
+        "categories": result.tactics,
+    }
+
+@router.post("/quick-check")
+async def quick_check(req: URLRequest):
+    """
+    Fast check for extension hover — skips Selenium sandbox.
+    Only runs domain + NLP analysis (responds in ~2-3 seconds).
+    No Redis caching — always runs fresh analysis.
+    """
+
+    # Only run fast analyzers — NO sandbox/Selenium
+    try:
+        domain_result, nlp_result = await asyncio.gather(
+            analyze_domain(req.url),
+            analyze_nlp(""),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    raw_score = domain_result.score + nlp_result.score
+    composite_score = min(raw_score, 100)
+
+    return {
+        "is_malicious": composite_score >= 40,
+        "reason": f"Domain + NLP signals. Score: {composite_score}/100. Flags: {', '.join(domain_result.flags[:3]) or 'none'}",
+        "score": round(composite_score / 100, 2),
+        "categories": domain_result.flags[:3],
+        "cached": False,
+    }
+
+
+@router.post("/instant-check")
+async def instant_check(req: URLRequest):
+    """
+    Zero external calls — pure regex/pattern matching.
+    Responds in under 100ms always.
+    """
+
+    url = req.url.lower()
+    domain = url.split("/")[2] if "//" in url else url.split("/")[0]
+
+    # Known safe domains — instant return
+    safe_domains = [
+        "google.com", "gmail.com", "youtube.com", "facebook.com",
+        "instagram.com", "twitter.com", "x.com", "linkedin.com",
+        "github.com", "microsoft.com", "apple.com", "amazon.com",
+        "wikipedia.org", "reddit.com", "netflix.com", "spotify.com",
+        "whatsapp.com", "zoom.us", "slack.com", "discord.com",
+        "stackoverflow.com", "medium.com", "notion.so", "figma.com",
+        "dropbox.com", "adobe.com", "canva.com", "twitch.tv",
+        "paypal.com", "stripe.com", "shopify.com", "ebay.com",
+        "yahoo.com", "bing.com", "duckduckgo.com", "brave.com",
+        "kucoin.com", "binance.com", "coinbase.com", "kraken.com",
+    ]
+    for safe in safe_domains:
+        if domain.endswith(safe):
+            return {
+                "is_malicious": False,
+                "reason": f"Trusted domain: {safe}",
+                "score": 0.0,
+                "categories": [],
+            }
+
+    # ── Suspicious TLDs (commonly abused for phishing) ──
+    suspicious_tlds = (
+        r"\.(xyz|top|click|loan|gq|tk|ml|ga|cf|pw|"
+        r"sbs|buzz|icu|fun|monster|rest|surf|cam|"
+        r"cfd|cyou|rio|uno|bid|trade|win|racing|"
+        r"review|cricket|party|science|work|date|"
+        r"download|stream|accountant|faith|gdn|"
+        r"men|ren|kim|wang|ooo|vip|life|live|"
+        r"club|site|online|store|tech|space|website)$"
+    )
+
+    # ── Brand names (used in phishing subdomains/paths) ──
+    brand_pattern = (
+        r"(paypal|amazon|google|apple|microsoft|bank|"
+        r"secure|login|verify|account|update|confirm|"
+        r"ebay|netflix|metamask|coinbase|binance|kucoin|"
+        r"kraken|phantom|trustwallet|blockchain|crypto|"
+        r"wallet|signin|password|recovery|support|helpdesk)"
+    )
+
+    flags = []
+
+    # IP address as domain
+    if re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", domain):
+        flags.append("ip_address_url")
+
+    # Hyphens in domain (even 1 hyphen in main domain is suspicious)
+    domain_parts = domain.split(".")
+    main_domain = domain_parts[-2] if len(domain_parts) >= 2 else ""
+    if "-" in main_domain:
+        flags.append("hyphenated_domain")
+
+    # Suspicious TLD
+    if re.search(suspicious_tlds, domain):
+        flags.append("suspicious_tld")
+
+    # Brand name in subdomain or domain body
+    if re.search(brand_pattern + r".*\.", domain):
+        flags.append("brand_impersonation")
+    elif re.search(brand_pattern, main_domain):
+        flags.append("brand_in_domain")
+
+    # Unusually long domain
+    if len(domain) > 40:
+        flags.append("unusually_long_domain")
+
+    # Data URI
+    if re.search(r"^data:", url):
+        flags.append("data_uri")
+
+    # URL shortener
+    if re.search(r"(bit\.ly|tinyurl|t\.co|goo\.gl|ow\.ly|short\.io|is\.gd|v\.gd|rb\.gy)", domain):
+        flags.append("url_shortener")
+
+    # Numeric-heavy domain (e.g. 192x168x1.com-like patterns)
+    domain_name = main_domain or domain
+    digit_ratio = sum(c.isdigit() for c in domain_name) / max(len(domain_name), 1)
+    if digit_ratio > 0.4 and len(domain_name) > 4:
+        flags.append("numeric_heavy_domain")
+
+    # Suspicious path keywords
+    if re.search(r"/(login|signin|verify|secure|account|update|confirm|password|reset|auth)", url):
+        flags.append("suspicious_path")
+
+    score = min(len(flags) * 0.25, 1.0)
+    is_malicious = len(flags) >= 1  # even one flag is suspicious
+
+    return {
+        "is_malicious": is_malicious,
+        "reason": f"Flags: {', '.join(flags)}" if flags else "No suspicious patterns detected",
+        "score": score,
+        "categories": flags,
+    }

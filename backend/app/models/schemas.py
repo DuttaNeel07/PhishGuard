@@ -81,3 +81,9 @@ class ReportRequest(BaseModel):
     url: str
     user_city: Optional[str] = None
     notes: Optional[str] = None
+
+class URLRequest(BaseModel):
+    url: str
+
+class QRRequest(BaseModel):
+    image_url: str
