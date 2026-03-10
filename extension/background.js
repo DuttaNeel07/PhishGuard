@@ -12,7 +12,7 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.apiBase) apiBase = changes.apiBase.newValue;
 });
 
-// ─── Cache: url → { status, reason, checkedAt } ─────────────────────────────
+// ─── Cache: url → { status, reason, checkedAt, deep } ───────────────────────
 const cache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -26,63 +26,147 @@ function getCached(url) {
   return entry;
 }
 
-// ─── Core: Check URL against PhishGuard backend ──────────────────────────────
+// ─── Helper: fetch with manual timeout ───────────────────────────────────────
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+// ─── Stage 1: Instant regex check (<100ms) ───────────────────────────────────
+async function instantCheck(url) {
+  const response = await fetchWithTimeout(
+    `${apiBase}/analyze/instant-check`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    },
+    5000
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// ─── Stage 2: Deep analysis — domain + NLP (2-3s) ───────────────────────────
+async function deepCheck(url) {
+  const response = await fetchWithTimeout(
+    `${apiBase}/analyze/quick-check`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    },
+    10000
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// ─── Two-stage URL check ─────────────────────────────────────────────────────
+// Stage 1: instant regex — returns result immediately
+// Stage 2: if regex said "safe" and it's not a known trusted domain,
+//          run deep analysis in background and upgrade cache if needed
 async function checkUrl(url) {
   const cached = getCached(url);
   if (cached) return cached;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const response = await fetch(`${apiBase}/analyze/instant-check`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
+    // ── Stage 1: Instant check ──
+    const instantData = await instantCheck(url);
 
     const result = {
-      status: data.is_malicious ? "dangerous" : "safe",
-      reason: data.reason || data.message || "",
-      score: data.score ?? null,
-      categories: data.categories || [],
+      status: instantData.is_malicious ? "dangerous" : "safe",
+      reason: instantData.reason || "",
+      score: instantData.score ?? null,
+      categories: instantData.categories || [],
       checkedAt: Date.now(),
+      deep: false,
     };
 
     cache.set(url, result);
+
+    // ── Stage 2: If instant says safe but NOT a trusted domain, run deep check ──
+    const isTrusted = (instantData.reason || "").startsWith("Trusted domain");
+    if (!instantData.is_malicious && !isTrusted) {
+      // Fire-and-forget deep analysis — updates cache & notifies tabs
+      runDeepCheck(url);
+    }
+
     return result;
   } catch (err) {
     return {
       status: "error",
       reason: `Could not reach PhishGuard backend: ${err.message}`,
       checkedAt: Date.now(),
+      deep: false,
     };
   }
 }
 
-// ─── Core: Check QR image URL ─────────────────────────────────────────────────
+// ─── Deep check runner (fire-and-forget, updates cache) ──────────────────────
+async function runDeepCheck(url) {
+  try {
+    const deepData = await deepCheck(url);
+
+    if (deepData.is_malicious) {
+      // Deep analysis found something regex missed — upgrade to dangerous
+      const upgraded = {
+        status: "dangerous",
+        reason: deepData.reason || "Flagged by deep analysis",
+        score: deepData.score ?? null,
+        categories: deepData.categories || [],
+        checkedAt: Date.now(),
+        deep: true,
+      };
+      cache.set(url, upgraded);
+
+      // Notify ALL tabs that this URL is now dangerous
+      chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+          chrome.tabs.sendMessage(tab.id, {
+            type: "DEEP_CHECK_UPDATE",
+            url,
+            result: upgraded,
+          }).catch(() => {});
+        }
+      });
+    } else {
+      // Deep analysis confirmed safe — mark as deep-verified
+      const current = cache.get(url);
+      if (current) {
+        current.deep = true;
+        current.reason = deepData.reason || current.reason;
+        cache.set(url, current);
+      }
+    }
+  } catch (err) {
+    // Deep check failed silently — keep the instant result
+  }
+}
+
+// ─── Core: Check QR image URL ────────────────────────────────────────────────
 async function checkQr(imageUrl) {
   const cached = getCached("qr:" + imageUrl);
   if (cached) return cached;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const response = await fetch(`${apiBase}/analyze/check-qr`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_url: imageUrl }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(
+      `${apiBase}/analyze/check-qr`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_url: imageUrl }),
+      },
+      30000
+    );
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
@@ -105,7 +189,7 @@ async function checkQr(imageUrl) {
   }
 }
 
-// ─── Badge helpers ────────────────────────────────────────────────────────────
+// ─── Badge helpers ───────────────────────────────────────────────────────────
 function setBadge(tabId, count) {
   if (count > 0) {
     chrome.action.setBadgeText({ text: String(count), tabId });
@@ -115,7 +199,7 @@ function setBadge(tabId, count) {
   }
 }
 
-// ─── Context Menu ─────────────────────────────────────────────────────────────
+// ─── Context Menu ────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "phishguard-check-link",
@@ -151,11 +235,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// ─── Message handler from content.js / popup.js ───────────────────────────────
+// ─── Message handler from content.js / popup.js ──────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "CHECK_URL") {
     checkUrl(msg.url).then(sendResponse);
-    return true; // async
+    return true;
   }
   if (msg.type === "CHECK_QR") {
     checkQr(msg.imageUrl).then(sendResponse);

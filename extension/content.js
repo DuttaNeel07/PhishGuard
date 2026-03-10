@@ -215,6 +215,25 @@
     if (msg.type === "PHISHGUARD_BLOCK_WARNING") {
       showBlockWarning(msg.url, msg.result);
     }
+    // ── Deep analysis upgrade: regex said safe, AI says dangerous ──
+    if (msg.type === "DEEP_CHECK_UPDATE") {
+      const url = msg.url;
+      const result = msg.result;
+      checkedLinks.set(url, result);
+
+      if (result.status === "dangerous") {
+        // Mark all matching links on the page
+        document.querySelectorAll(`a[href]`).forEach((link) => {
+          if (link.href === url) {
+            markLinkDangerous(link);
+          }
+        });
+        dangerousCount++;
+        chrome.runtime.sendMessage({ type: "SET_BADGE", count: dangerousCount });
+        // Show a banner so user knows about the upgrade
+        showContextResultBanner(url, result, false);
+      }
+    }
     if (msg.type === "GET_STATS") {
       const allLinks = document.querySelectorAll("a[href]");
       const qrImages = document.querySelectorAll("img[data-phishguard-qr]");
